@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+	cat <<'EOF'
+Usage: build-kernel.sh SOURCE_PACKAGE_VERSION [LOCAL_VERSION] [OUTPUT_DIR]
+
+Example:
+  scripts/build-kernel.sh 7.0.0-28.28 -s4lockdown "$PWD/dist"
+EOF
+}
+
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+	usage >&2
+	exit 2
+fi
+
+source_package_version=$1
+local_version=${2:--s4lockdown}
+output_dir=${3:-"$PWD/dist"}
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+work_dir=${WORK_DIR:-"$repo_root/work"}
+
+if [[ ! $source_package_version =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+$ ]]; then
+	printf 'Unsupported Ubuntu kernel package version: %s\n' "$source_package_version" >&2
+	exit 2
+fi
+
+if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
+	printf 'LOCAL_VERSION must begin with "-" and contain package-safe characters.\n' >&2
+	exit 2
+fi
+
+for command in apt-get dpkg-deb find make patch tar; do
+	command -v "$command" >/dev/null || {
+		printf 'Required command not found: %s\n' "$command" >&2
+		exit 1
+	}
+done
+
+abi_version=${source_package_version%.*}
+source_name=${source_package_version%%-*}
+source_package="linux-source-$source_name"
+image_package="linux-image-unsigned-${abi_version}-generic"
+
+rm -rf "$work_dir"
+mkdir -p "$work_dir/downloads" "$work_dir/source-package" \
+	"$work_dir/image-package" "$output_dir"
+
+(
+	cd "$work_dir/downloads"
+	apt-get download "${source_package}=${source_package_version}"
+	apt-get download "${image_package}=${source_package_version}"
+)
+
+source_deb=$(find "$work_dir/downloads" -maxdepth 1 -type f \
+	-name "${source_package}_*.deb" -print -quit)
+image_deb=$(find "$work_dir/downloads" -maxdepth 1 -type f \
+	-name "${image_package}_*.deb" -print -quit)
+
+if [[ -z $source_deb || -z $image_deb ]]; then
+	printf 'Could not resolve the requested source or image package.\n' >&2
+	exit 1
+fi
+
+dpkg-deb -x "$source_deb" "$work_dir/source-package"
+dpkg-deb -x "$image_deb" "$work_dir/image-package"
+
+source_archive=$(find "$work_dir/source-package/usr/src" -type f \
+	-name "linux-source-${source_name}.tar.*" -print -quit)
+base_config="$work_dir/image-package/boot/config-${abi_version}-generic"
+
+if [[ -z $source_archive || ! -f $base_config ]]; then
+	printf 'The Ubuntu packages do not contain the expected source archive or config.\n' >&2
+	exit 1
+fi
+
+tar -xf "$source_archive" -C "$work_dir"
+source_tree="$work_dir/linux-source-$source_name"
+
+patch -d "$source_tree" -p1 --forward \
+	< "$repo_root/patches/0001-power-hibernate-allow-lockdown-opt-in.patch"
+cp "$base_config" "$source_tree/.config"
+
+"$source_tree/scripts/config" --file "$source_tree/.config" \
+	--set-str LOCALVERSION "$local_version" \
+	--disable LOCALVERSION_AUTO \
+	--enable HIBERNATION_ALLOW_LOCKDOWN \
+	--set-str SYSTEM_TRUSTED_KEYS "" \
+	--set-str SYSTEM_REVOCATION_KEYS ""
+
+make -C "$source_tree" olddefconfig
+
+export KBUILD_BUILD_USER=github-actions
+export KBUILD_BUILD_HOST=secure-hibernate-kernel
+export KDEB_PKGVERSION="1${local_version}+ubuntu${source_package_version}"
+
+make -C "$source_tree" -j"${JOBS:-$(nproc)}" bindeb-pkg
+
+find "$work_dir" -maxdepth 1 -type f \
+	\( -name 'linux-image-*.deb' -o -name 'linux-headers-*.deb' \) \
+	-exec cp -v {} "$output_dir/" \;
+cp "$source_tree/scripts/sign-file" "$output_dir/sign-file"
+chmod 0755 "$output_dir/sign-file"
+
+kernel_release=$(make -s -C "$source_tree" kernelrelease)
+printf '%s\n' "$kernel_release" > "$output_dir/kernel-release.txt"
+printf '%s\n' "$source_package_version" > "$output_dir/ubuntu-source-package-version.txt"
+
+if ! find "$output_dir" -maxdepth 1 -type f -name 'linux-image-*.deb' -print -quit | grep -q .; then
+	printf 'The build completed without producing a linux-image package.\n' >&2
+	exit 1
+fi
+
+printf 'Build artifacts are in %s\n' "$output_dir"

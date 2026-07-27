@@ -1,0 +1,10 @@
+artifacts/
+dist/
+work/
+*.deb
+*.der
+*.key
+*.pem
+*.p12
+*.priv
+

@@ -1,0 +1,62 @@
+name: Build Ubuntu hibernation kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_package_version:
+        description: Exact Ubuntu linux-source package version
+        required: true
+        default: 7.0.0-28.28
+      local_version:
+        description: Kernel local version suffix, including the leading dash
+        required: true
+        default: -s4lockdown
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    container:
+      image: ubuntu:resolute
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio dpkg-dev dwarves \
+            fakeroot flex git kmod libdw-dev libelf-dev libssl-dev patch \
+            python3 rsync shellcheck xz-utils zstd
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check scripts
+        run: |
+          shellcheck scripts/*.sh
+          bash -n scripts/*.sh
+
+      - name: Build unsigned packages
+        env:
+          SOURCE_PACKAGE_VERSION: ${{ inputs.source_package_version }}
+          LOCAL_VERSION: ${{ inputs.local_version }}
+        run: |
+          scripts/build-kernel.sh \
+            "$SOURCE_PACKAGE_VERSION" "$LOCAL_VERSION" "$GITHUB_WORKSPACE/dist"
+
+      - name: Record checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+
+      - name: Upload unsigned packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-hibernation-kernel-${{ inputs.source_package_version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
