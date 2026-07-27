@@ -31,7 +31,7 @@ if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
 	exit 2
 fi
 
-for command in apt-get dpkg-deb find make patch tar; do
+for command in apt-get dpkg-deb find gawk make patch tar; do
 	command -v "$command" >/dev/null || {
 		printf 'Required command not found: %s\n' "$command" >&2
 		exit 1

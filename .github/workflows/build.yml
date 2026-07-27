@@ -28,8 +28,8 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates cpio debhelper dpkg-dev dwarves \
-            fakeroot flex git kmod libdw-dev libelf-dev libssl-dev patch \
+            bc bison build-essential ca-certificates ccache cpio debhelper dpkg-dev \
+            dwarves fakeroot flex gawk git kmod libdw-dev libelf-dev libssl-dev patch \
             python3 rsync shellcheck xz-utils zstd
 
       - name: Check out repository
@@ -40,13 +40,44 @@ jobs:
           shellcheck scripts/*.sh
           bash -n scripts/*.sh
 
+      - name: Restore compiler cache
+        id: restore-ccache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ inputs.source_package_version }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ inputs.source_package_version }}-
+            ccache-${{ runner.os }}-
+
       - name: Build unsigned packages
         env:
           SOURCE_PACKAGE_VERSION: ${{ inputs.source_package_version }}
           LOCAL_VERSION: ${{ inputs.local_version }}
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_MAXSIZE: 5G
         run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          ccache --max-size "$CCACHE_MAXSIZE"
+          ccache --zero-stats
           scripts/build-kernel.sh \
             "$SOURCE_PACKAGE_VERSION" "$LOCAL_VERSION" "$GITHUB_WORKSPACE/dist"
+
+      - name: Report compiler cache
+        if: always()
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+        run: ccache --show-stats
+
+      - name: Save compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ inputs.source_package_version }}-${{ github.run_id }}
 
       - name: Record checksums
         run: |
