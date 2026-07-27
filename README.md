@@ -29,7 +29,9 @@ Ubuntu source package version. The default currently targets
 
 The workflow downloads the matching `linux-source` and generic kernel config
 from Ubuntu, applies the patch, builds Debian packages, and publishes them as a
-14-day Actions artifact. The full Linux source tree is not committed here.
+14-day Actions artifact. The artifact contains the image, modules, headers,
+local signing helper, and checksums; it excludes the optional multi-gigabyte
+kernel debug-symbol package. The full Linux source tree is not committed here.
 
 With GitHub CLI, a completed artifact can be downloaded with:
 

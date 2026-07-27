@@ -95,11 +95,13 @@ export KBUILD_BUILD_USER=github-actions
 export KBUILD_BUILD_HOST=github.com
 export KDEB_CHANGELOG_DIST=ubuntu
 export KDEB_PKGVERSION="1${local_version}+ubuntu${source_package_version}"
+export DEB_BUILD_PROFILES=pkg.linux-upstream.nokerneldbg
 
 make -C "$source_tree" -j"${JOBS:-$(nproc)}" bindeb-pkg
 
 find "$work_dir" -maxdepth 1 -type f \
-	\( -name 'linux-image-*.deb' -o -name 'linux-headers-*.deb' \) \
+	\( -name 'linux-headers-*.deb' -o \
+		\( -name 'linux-image-*.deb' ! -name '*-dbg_*' \) \) \
 	-exec cp -v {} "$output_dir/" \;
 cp "$source_tree/scripts/sign-file" "$output_dir/sign-file"
 chmod 0755 "$output_dir/sign-file"
