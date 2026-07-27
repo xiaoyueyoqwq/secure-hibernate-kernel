@@ -28,7 +28,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates cpio dpkg-dev dwarves \
+            bc bison build-essential ca-certificates cpio debhelper dpkg-dev dwarves \
             fakeroot flex git kmod libdw-dev libelf-dev libssl-dev patch \
             python3 rsync shellcheck xz-utils zstd
 

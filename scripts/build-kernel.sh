@@ -92,7 +92,8 @@ cp "$base_config" "$source_tree/.config"
 make -C "$source_tree" olddefconfig
 
 export KBUILD_BUILD_USER=github-actions
-export KBUILD_BUILD_HOST=secure-hibernate-kernel
+export KBUILD_BUILD_HOST=github.com
+export KDEB_CHANGELOG_DIST=ubuntu
 export KDEB_PKGVERSION="1${local_version}+ubuntu${source_package_version}"
 
 make -C "$source_tree" -j"${JOBS:-$(nproc)}" bindeb-pkg
