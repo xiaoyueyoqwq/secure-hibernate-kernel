@@ -41,34 +41,34 @@ done
 abi_version=${source_package_version%.*}
 source_name=${source_package_version%%-*}
 source_package="linux-source-$source_name"
-image_package="linux-image-unsigned-${abi_version}-generic"
+config_package="linux-headers-${abi_version}-generic"
 
 rm -rf "$work_dir"
 mkdir -p "$work_dir/downloads" "$work_dir/source-package" \
-	"$work_dir/image-package" "$output_dir"
+	"$work_dir/config-package" "$output_dir"
 
 (
 	cd "$work_dir/downloads"
 	apt-get download "${source_package}=${source_package_version}"
-	apt-get download "${image_package}=${source_package_version}"
+	apt-get download "${config_package}=${source_package_version}"
 )
 
 source_deb=$(find "$work_dir/downloads" -maxdepth 1 -type f \
 	-name "${source_package}_*.deb" -print -quit)
-image_deb=$(find "$work_dir/downloads" -maxdepth 1 -type f \
-	-name "${image_package}_*.deb" -print -quit)
+config_deb=$(find "$work_dir/downloads" -maxdepth 1 -type f \
+	-name "${config_package}_*.deb" -print -quit)
 
-if [[ -z $source_deb || -z $image_deb ]]; then
-	printf 'Could not resolve the requested source or image package.\n' >&2
+if [[ -z $source_deb || -z $config_deb ]]; then
+	printf 'Could not resolve the requested source or config package.\n' >&2
 	exit 1
 fi
 
 dpkg-deb -x "$source_deb" "$work_dir/source-package"
-dpkg-deb -x "$image_deb" "$work_dir/image-package"
+dpkg-deb -x "$config_deb" "$work_dir/config-package"
 
 source_archive=$(find "$work_dir/source-package/usr/src" -type f \
 	-name "linux-source-${source_name}.tar.*" -print -quit)
-base_config="$work_dir/image-package/boot/config-${abi_version}-generic"
+base_config="$work_dir/config-package/usr/src/linux-headers-${abi_version}-generic/.config"
 
 if [[ -z $source_archive || ! -f $base_config ]]; then
 	printf 'The Ubuntu packages do not contain the expected source archive or config.\n' >&2
