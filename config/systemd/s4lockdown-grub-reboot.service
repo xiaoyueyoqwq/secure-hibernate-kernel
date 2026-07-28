@@ -1,0 +1,8 @@
+[Unit]
+Description=Select the running hibernation kernel for the next boot
+DefaultDependencies=no
+Before=systemd-hibernate.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/sbin/s4lockdown-grub-reboot

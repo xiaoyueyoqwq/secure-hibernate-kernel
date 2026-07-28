@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kernel_release=$(uname -r)
+if [[ $kernel_release != *-s4lockdown ]]; then
+	printf 'Refusing hibernation from non-s4lockdown kernel %s\n' "$kernel_release" >&2
+	exit 1
+fi
+
+root_uuid=$(findmnt -n -o UUID /)
+submenu_id="gnulinux-advanced-${root_uuid}"
+kernel_id="gnulinux-${kernel_release}-advanced-${root_uuid}"
+entry="$submenu_id>$kernel_id"
+if ! grep -Fq "'$submenu_id'" /boot/grub/grub.cfg ||
+	! grep -Fq "'$kernel_id'" /boot/grub/grub.cfg; then
+	printf 'GRUB submenu or entry is missing for running kernel %s\n' \
+		"$kernel_release" >&2
+	exit 1
+fi
+
+grub-reboot "$entry"
+sync -f /boot/grub/grubenv
+logger -t s4lockdown "Set one-shot resume boot to $kernel_release"

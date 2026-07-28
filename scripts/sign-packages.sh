@@ -6,7 +6,8 @@ usage() {
 Usage: sign-packages.sh ARTIFACT_DIR PRIVATE_KEY CERTIFICATE [OUTPUT_DIR]
 
 Signs the PE kernel image and every loadable module in each linux-image .deb.
-The private key remains local and is never required by GitHub Actions.
+The signing helper must belong to an installed Ubuntu generic headers package.
+Set SIGN_FILE only to select a specific trusted system helper.
 EOF
 }
 
@@ -19,7 +20,7 @@ artifact_dir=$(realpath "$1")
 private_key=$(realpath "$2")
 certificate=$(realpath "$3")
 output_dir=${4:-"$artifact_dir/signed"}
-sign_file="$artifact_dir/sign-file"
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 for command in dpkg-deb find md5sum openssl realpath sbsign xz zstd; do
 	command -v "$command" >/dev/null || {
@@ -28,10 +29,12 @@ for command in dpkg-deb find md5sum openssl realpath sbsign xz zstd; do
 	}
 done
 
-[[ -x $sign_file ]] || {
-	printf 'Missing executable signing helper: %s\n' "$sign_file" >&2
-	exit 1
-}
+if [[ -n ${SIGN_FILE:-} ]]; then
+	sign_file=$("$repo_root/scripts/resolve-sign-file.sh" "$SIGN_FILE")
+else
+	sign_file=$("$repo_root/scripts/resolve-sign-file.sh")
+fi
+printf 'Using trusted signing helper: %s\n' "$sign_file"
 
 [[ -f $private_key && -f $certificate ]] || {
 	printf 'The private key or certificate does not exist.\n' >&2

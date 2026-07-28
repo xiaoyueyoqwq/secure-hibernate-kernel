@@ -3,10 +3,10 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-Usage: build-kernel.sh SOURCE_PACKAGE_VERSION [LOCAL_VERSION] [OUTPUT_DIR]
+Usage: build-kernel.sh SOURCE_PACKAGE_VERSION [LOCAL_VERSION|auto] [OUTPUT_DIR]
 
 Example:
-  scripts/build-kernel.sh 7.0.0-28.28 -s4lockdown "$PWD/dist"
+  scripts/build-kernel.sh 7.0.0-28.28 auto "$PWD/dist"
 EOF
 }
 
@@ -16,14 +16,23 @@ if [[ $# -lt 1 || $# -gt 3 ]]; then
 fi
 
 source_package_version=$1
-local_version=${2:--s4lockdown}
+local_version=${2:-auto}
 output_dir=${3:-"$PWD/dist"}
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 work_dir=${WORK_DIR:-"$repo_root/work"}
 
-if [[ ! $source_package_version =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+$ ]]; then
+if [[ $source_package_version =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)\.[0-9]+([.+~][0-9A-Za-z.+~-]+)?$ ]]; then
+	source_name=${BASH_REMATCH[1]}
+	abi_number=${BASH_REMATCH[2]}
+else
 	printf 'Unsupported Ubuntu kernel package version: %s\n' "$source_package_version" >&2
 	exit 2
+fi
+
+abi_version="${source_name}-${abi_number}"
+
+if [[ $local_version == auto ]]; then
+	local_version="-ubuntu${abi_number}-s4lockdown"
 fi
 
 if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
@@ -38,8 +47,6 @@ for command in apt-get dpkg-deb find gawk make patch tar; do
 	}
 done
 
-abi_version=${source_package_version%.*}
-source_name=${source_package_version%%-*}
 source_package="linux-source-$source_name"
 config_package="linux-headers-${abi_version}-generic"
 
@@ -100,15 +107,14 @@ export DEB_BUILD_PROFILES=pkg.linux-upstream.nokerneldbg
 make -C "$source_tree" -j"${JOBS:-$(nproc)}" bindeb-pkg
 
 find "$work_dir" -maxdepth 1 -type f \
-	\( -name 'linux-headers-*.deb' -o \
-		\( -name 'linux-image-*.deb' ! -name '*-dbg_*' \) \) \
-	-exec cp -v {} "$output_dir/" \;
-cp "$source_tree/scripts/sign-file" "$output_dir/sign-file"
-chmod 0755 "$output_dir/sign-file"
+		\( -name 'linux-headers-*.deb' -o \
+			\( -name 'linux-image-*.deb' ! -name '*-dbg_*' \) \) \
+		-exec cp -v {} "$output_dir/" \;
 
 kernel_release=$(make -s -C "$source_tree" kernelrelease)
 printf '%s\n' "$kernel_release" > "$output_dir/kernel-release.txt"
 printf '%s\n' "$source_package_version" > "$output_dir/ubuntu-source-package-version.txt"
+printf '%s\n' "$local_version" > "$output_dir/local-version.txt"
 
 if ! find "$output_dir" -maxdepth 1 -type f -name 'linux-image-*.deb' -print -quit | grep -q .; then
 	printf 'The build completed without producing a linux-image package.\n' >&2

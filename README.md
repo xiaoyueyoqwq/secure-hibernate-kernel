@@ -1,10 +1,10 @@
 # Ubuntu Secure Boot hibernation kernel
 
 This project builds a narrowly patched Ubuntu kernel that permits traditional
-hibernation while kernel integrity lockdown is active. It keeps the signing
-key off GitHub: Actions produces unsigned Debian packages, then
-`scripts/sign-packages.sh` signs the kernel image and modules on the target
-machine with a locally held MOK key.
+hibernation while kernel integrity lockdown is active. GitHub Actions builds
+the kernel, signs its EFI image and modules with a dedicated project MOK, and
+publishes verified Debian packages. Users enroll the public project certificate
+once and can then install the same signed packages.
 
 ## Security boundary
 
@@ -20,35 +20,91 @@ while the encrypted volume is open and can modify a future resume image.
 Do not use this build when Secure Boot is expected to defend against malicious
 local root or an equivalent running-system compromise.
 
+Enrolling the project MOK also trusts every future kernel signed by the project
+private key. That key is stored as a secret in the `release-signing` GitHub
+environment. The build and publishing jobs cannot access it; only the isolated
+signing job receives it. A compromise of that key or signing workflow affects
+every system that enrolls the project certificate.
+
+See [Rationale, measurements, and audit boundary](docs/rationale-and-audit.md)
+for the affected-platform evidence, exact retained guarantees, and upstream
+positioning.
+
+Maintainers should also read
+[Project signing key lifecycle](docs/project-signing-key-lifecycle.md) before
+changing the signing certificate, GitHub environment, or Release workflow.
+
 ## Build in GitHub Actions
 
-Run the `Build Ubuntu hibernation kernel` workflow and specify the exact
-Ubuntu source package version. The default currently targets
-`7.0.0-28.28` from Ubuntu Resolute and generates a kernel release ending in
-`-s4lockdown`.
+Run the `Build Ubuntu hibernation kernel` workflow with `auto`, or specify an
+exact Ubuntu source package version. Automatic builds follow the current
+`linux-image-generic-hwe-26.04` package. Kernel releases include the Ubuntu ABI
+in a suffix such as `-ubuntu28-s4lockdown`, so a new ABI installs alongside the
+previous custom and official kernels instead of replacing their module trees.
 
 The workflow downloads the matching `linux-source` and generic kernel config
-from Ubuntu, applies the patch, builds Debian packages, and publishes them as a
-14-day Actions artifact. The artifact contains the image, modules, headers,
-local signing helper, and checksums; it excludes the optional multi-gigabyte
-kernel debug-symbol package. The full Linux source tree is not committed here.
+from Ubuntu and applies the patch. A build job with read-only repository access
+produces unsigned packages. A separate job uses Ubuntu's packaged `sign-file`
+and the protected project secret to sign them. A final job without the secret
+publishes the verified Release. Access to the signing environment requires an
+explicit maintainer approval. A daily scheduled check skips complete Release
+tags, and published assets are immutable.
 
-With GitHub CLI, a completed artifact can be downloaded with:
+Each Release contains the project-signed image, the unsigned image for users
+who prefer an independent MOK, headers, public project certificates, metadata,
+and `SHA256SUMS`. It excludes the optional multi-gigabyte debug-symbol package.
+The full Linux source tree is not committed here.
+
+With GitHub CLI, a completed Release can be downloaded with:
 
 ```bash
-gh run download RUN_ID --dir artifacts
+gh release download ubuntu-SOURCE_PACKAGE_VERSION --dir release
+(cd release && sha256sum --check SHA256SUMS)
 ```
 
-## Sign locally
+## Enroll the project MOK
+
+The public trust anchor is `certs/secure-hibernate-project.der`. Its SHA-256
+fingerprint is:
+
+```text
+5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:
+20:29:6D:7F:D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11
+```
+
+Request enrollment, choose a temporary one-time password, and reboot into
+MokManager to confirm it:
+
+```bash
+pkexec /usr/bin/mokutil --import \
+  "$(realpath certs/secure-hibernate-project.der)"
+```
+
+The temporary password authorizes only the pending enrollment. It is unrelated
+to the project private key, login password, or LUKS passphrase.
+
+After enrollment, validate and install a downloaded Release:
+
+```bash
+scripts/install-signed-packages.sh --check-only \
+  release certs/secure-hibernate-project.pem
+pkexec "$(realpath scripts/install-signed-packages.sh)" \
+  release certs/secure-hibernate-project.pem
+```
+
+## Use an independent MOK
+
+Users who do not want to trust the shared project key can sign the unsigned
+image from the same Release with a machine-specific MOK.
 
 Install the local tooling once:
 
 ```bash
-sudo apt install sbsigntool zstd xz-utils openssl
+pkexec /usr/bin/apt-get install -y \
+  linux-headers-generic-hwe-26.04 openssl perl sbsigntool xz-utils zstd
 ```
 
-Then sign an extracted Actions artifact. Keep the private key outside this
-repository and restrict it to mode `0600`:
+Keep the private key outside this repository and restrict it to mode `0600`:
 
 ```bash
 scripts/sign-packages.sh \
@@ -56,18 +112,70 @@ scripts/sign-packages.sh \
   /path/to/MOK.priv /path/to/MOK.pem
 ```
 
-The script signs every kernel module, signs the EFI-stub kernel image, and
-rebuilds the image package. Header packages are copied unchanged. It does not
-install packages, enroll a MOK, edit GRUB, alter initramfs, or change TPM/LUKS
-configuration.
+The script resolves `sign-file` only from an installed, root-owned Ubuntu
+generic headers package. It signs every kernel module, signs the EFI-stub
+kernel image, and rebuilds the image package. Header packages are copied
+unchanged. It does not install packages, enroll a MOK, edit GRUB, alter
+initramfs, or change TPM/LUKS configuration.
+
+The Release download, checksum, and local signing steps can be run together:
+
+```bash
+scripts/prepare-release.sh /path/to/MOK.priv /path/to/MOK.pem auto
+```
+
+`scripts/install-signed-packages.sh` cryptographically validates the PE image
+and every module against the selected certificate, checks signer metadata and
+matching headers, installs the packages, and selects the custom kernel while
+keeping official Ubuntu kernels in the five-second GRUB menu. Validation can
+be run without root or installation first:
+
+```bash
+scripts/install-signed-packages.sh --check-only /path/to/signed /path/to/MOK.pem
+```
+
+After the certificate has been enrolled through MokManager, install the checked
+packages with a desktop authorization prompt:
+
+```bash
+pkexec "$(realpath scripts/install-signed-packages.sh)" \
+  /path/to/signed /path/to/MOK.pem
+```
+
+## System integration
+
+`scripts/install-system-config.sh` installs the narrowly scoped dracut,
+Polkit, logind, and systemd configuration used by this setup. It enables direct
+lid-close hibernation. The hibernation service directly requires a helper that
+selects the currently running custom kernel for the next boot; hibernation
+fails if that selection cannot be verified. This prevents an updated official
+default from being used to resume an incompatible image.
+
+The system configuration does not create swap, modify LUKS tokens, enroll a
+MOK, or remove official kernels. Those operations remain explicit because
+their correct recovery procedure depends on the target machine.
+
+For a machine that already has disk-backed swap inside its encrypted root
+volume, deploy the integration and create a separate LUKS2 header backup with:
+
+```bash
+pkexec "$(realpath scripts/deploy-system.sh)" \
+  /dev/ROOT_LUKS /path/to/new-luks-header.img KERNEL_RELEASE
+```
+
+The backup path must not exist. The command leaves every existing LUKS
+keyslot and TPM token unchanged. Additional TPM enrollment is deliberately a
+separate `systemd-cryptenroll` operation so its recovery implications remain
+visible.
 
 ## Updating
 
-Normal Ubuntu updates remain enabled, including official kernel packages. A
-new custom kernel must be rebuilt when adopting a newer Ubuntu kernel security
-update: dispatch the workflow with the new exact source package version, sign
-the artifact locally, and install it after validation. Always retain at least
-one official Ubuntu kernel as a recovery boot option.
+Normal Ubuntu updates remain enabled, including the official HWE meta-package.
+The scheduled workflow publishes project-signed and unsigned packages when that
+meta-package moves to a new source version. Installing a published package is
+currently an explicit local operation; a future local update service can
+download, verify, install, and notify without receiving the signing key. Always
+retain at least one official Ubuntu kernel as a recovery boot option.
 
 ## License
 

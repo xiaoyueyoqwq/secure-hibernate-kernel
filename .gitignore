@@ -1,10 +1,18 @@
 artifacts/
 dist/
 work/
+.ccache/
+.codex/
 *.deb
 *.der
 *.key
 *.pem
 *.p12
+*.p8
+*.pfx
+*.pk8
 *.priv
 
+# Exact public project trust anchors; all other key-like files remain ignored.
+!certs/secure-hibernate-project.der
+!certs/secure-hibernate-project.pem

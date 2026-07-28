@@ -1,60 +1,104 @@
 name: Build Ubuntu hibernation kernel
 
 on:
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       source_package_version:
-        description: Exact Ubuntu linux-source package version
-        required: true
-        default: 7.0.0-28.28
-      local_version:
-        description: Kernel local version suffix, including the leading dash
-        required: true
-        default: -s4lockdown
+        description: Exact Ubuntu linux-source package version, or auto
+        required: false
+        default: auto
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    outputs:
+      should_publish: ${{ steps.marker.outputs.build }}
+      source_package_version: ${{ steps.kernel.outputs.source_package_version }}
+      local_version: ${{ steps.kernel.outputs.local_version }}
+      marker_tag: ${{ steps.kernel.outputs.marker_tag }}
     container:
       image: ubuntu:resolute
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
-      - name: Install build dependencies
+      - name: Install repository tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates ccache cpio debhelper dpkg-dev \
-            dwarves fakeroot flex gawk git kmod libdw-dev libelf-dev libssl-dev patch \
-            python3 rsync shellcheck xz-utils zstd
+          apt-get install -y --no-install-recommends ca-certificates gh git
 
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Resolve Ubuntu kernel version
+        id: kernel
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source_package_version || 'auto' }}
+        run: |
+          scripts/resolve-version.sh "$REQUESTED_SOURCE" auto >> "$GITHUB_OUTPUT"
+
+      - name: Check build marker
+        id: marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MARKER_TAG: ${{ steps.kernel.outputs.marker_tag }}
+        run: |
+          release_assets=$(mktemp)
+          if gh release view "$MARKER_TAG" --json assets \
+             --jq '.assets[].name' > "$release_assets" 2>/dev/null; then
+            release_exists=true
+          else
+            release_exists=false
+          fi
+          scripts/release-decision.sh \
+            "${{ github.event_name }}" "$release_exists" "$release_assets" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        if: steps.marker.outputs.build == 'true'
+        run: |
+          apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache cpio debhelper dpkg-dev dwarves fakeroot \
+            flex gawk kmod libdw-dev libelf-dev libssl-dev \
+            linux-headers-generic-hwe-26.04 openssl patch perl \
+            python3 rsync shellcheck xz-utils zstd
 
       - name: Check scripts
+        if: steps.marker.outputs.build == 'true'
         run: |
-          shellcheck scripts/*.sh
-          bash -n scripts/*.sh
+          shellcheck scripts/*.sh tests/*.sh
+          bash -n scripts/*.sh tests/*.sh
+          tests/release-decision.sh
+          tests/resolve-version.sh
+          tests/signing-security.sh
 
       - name: Restore compiler cache
+        if: steps.marker.outputs.build == 'true'
         id: restore-ccache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .ccache
-          key: ccache-${{ runner.os }}-${{ inputs.source_package_version }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ steps.kernel.outputs.source_package_version }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ inputs.source_package_version }}-
+            ccache-${{ runner.os }}-${{ steps.kernel.outputs.source_package_version }}-
             ccache-${{ runner.os }}-
 
       - name: Build unsigned packages
+        if: steps.marker.outputs.build == 'true'
         env:
-          SOURCE_PACKAGE_VERSION: ${{ inputs.source_package_version }}
-          LOCAL_VERSION: ${{ inputs.local_version }}
+          SOURCE_PACKAGE_VERSION: ${{ steps.kernel.outputs.source_package_version }}
+          LOCAL_VERSION: ${{ steps.kernel.outputs.local_version }}
           CCACHE_DIR: ${{ github.workspace }}/.ccache
           CCACHE_BASEDIR: ${{ github.workspace }}
           CCACHE_MAXSIZE: 5G
@@ -66,28 +110,141 @@ jobs:
             "$SOURCE_PACKAGE_VERSION" "$LOCAL_VERSION" "$GITHUB_WORKSPACE/dist"
 
       - name: Report compiler cache
-        if: always()
+        if: always() && steps.marker.outputs.build == 'true'
         env:
           CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: ccache --show-stats
 
       - name: Save compiler cache
-        if: always()
+        if: always() && steps.marker.outputs.build == 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .ccache
-          key: ccache-${{ runner.os }}-${{ inputs.source_package_version }}-${{ github.run_id }}
-
-      - name: Record checksums
-        run: |
-          cd dist
-          sha256sum * > SHA256SUMS
+          key: ccache-${{ runner.os }}-${{ steps.kernel.outputs.source_package_version }}-${{ github.run_id }}
 
       - name: Upload unsigned packages
-        uses: actions/upload-artifact@v4
+        if: steps.marker.outputs.build == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ubuntu-hibernation-kernel-${{ inputs.source_package_version }}
+          name: ubuntu-hibernation-kernel-${{ steps.kernel.outputs.source_package_version }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
+
+  sign:
+    needs: build
+    if: needs.build.outputs.should_publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: release-signing
+    permissions:
+      contents: read
+    container:
+      image: ubuntu:resolute
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install trusted signing tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates dpkg-dev kmod linux-headers-generic-hwe-26.04 \
+            openssl sbsigntool xz-utils zstd
+
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Download unsigned packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ubuntu-hibernation-kernel-${{ needs.build.outputs.source_package_version }}
+          path: dist
+
+      - name: Decode project signing key
+        env:
+          PROJECT_MOK_PRIVATE_KEY_B64: ${{ secrets.PROJECT_MOK_PRIVATE_KEY_B64 }}
+        run: |
+          test -n "$PROJECT_MOK_PRIVATE_KEY_B64"
+          install -m 0600 /dev/null "$RUNNER_TEMP/project-mok.priv"
+          printf '%s' "$PROJECT_MOK_PRIVATE_KEY_B64" \
+            | base64 --decode > "$RUNNER_TEMP/project-mok.priv"
+          unset PROJECT_MOK_PRIVATE_KEY_B64
+          openssl pkey -in "$RUNNER_TEMP/project-mok.priv" -noout -check
+
+      - name: Sign and verify packages
+        run: |
+          scripts/sign-packages.sh \
+            dist "$RUNNER_TEMP/project-mok.priv" \
+            certs/secure-hibernate-project.pem dist/signed
+          scripts/install-signed-packages.sh --check-only \
+            dist/signed certs/secure-hibernate-project.pem
+
+      - name: Assemble release files
+        run: |
+          mkdir release
+          find dist -maxdepth 1 -type f ! -name SHA256SUMS \
+            -exec cp -v {} release/ \;
+          find dist/signed -maxdepth 1 -type f -exec cp -v {} release/ \;
+          cp -v certs/secure-hibernate-project.der \
+            certs/secure-hibernate-project.pem release/
+          cd release
+          sha256sum -- * > SHA256SUMS
+
+      - name: Upload verified release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-kernel-release-${{ needs.build.outputs.source_package_version }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove project signing key
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/project-mok.priv"
+
+  publish:
+    needs: [build, sign]
+    if: needs.build.outputs.should_publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-kernel-release-${{ needs.build.outputs.source_package_version }}
+          path: dist
+
+      - name: Publish signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MARKER_TAG: ${{ needs.build.outputs.marker_tag }}
+          SOURCE_PACKAGE_VERSION: ${{ needs.build.outputs.source_package_version }}
+          LOCAL_VERSION: ${{ needs.build.outputs.local_version }}
+        run: |
+          (cd dist && sha256sum --check SHA256SUMS)
+          notes=$(mktemp)
+          cat > "$notes" <<EOF
+          Project-signed Ubuntu kernel packages for source version
+          \`$SOURCE_PACKAGE_VERSION\`. Enroll \`secure-hibernate-project.der\`
+          once before installation. The ABI-specific local suffix is
+          \`$LOCAL_VERSION\`.
+
+          The Release also retains the unsigned image for users who prefer a
+          machine-specific MOK. Verify every file with \`SHA256SUMS\`.
+
+          This build permits traditional hibernation under integrity lockdown. The
+          hibernation image is not authenticated; review the repository security boundary.
+          EOF
+          if gh release view "$MARKER_TAG" >/dev/null 2>&1; then
+            echo "Refusing to modify existing Release $MARKER_TAG." >&2
+            exit 1
+          fi
+          gh release create "$MARKER_TAG" dist/* \
+            --draft \
+            --title "Ubuntu hibernation kernel $SOURCE_PACKAGE_VERSION" \
+            --target "$GITHUB_SHA" \
+            --notes-file "$notes"
+          gh release edit "$MARKER_TAG" --draft=false
