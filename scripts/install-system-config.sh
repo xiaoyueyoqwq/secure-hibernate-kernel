@@ -11,10 +11,20 @@ if (( EUID != 0 )); then
 fi
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+grub_generator=/etc/grub.d/11_s4lockdown_resume
+legacy_grub_generator=/etc/grub.d/09_s4lockdown_resume
+
+if [[ -e $legacy_grub_generator ]] &&
+	! cmp -s "$repo_root/config/grub/11_s4lockdown_resume" "$legacy_grub_generator"; then
+	printf 'Refusing to replace locally modified legacy GRUB generator: %s\n' \
+		"$legacy_grub_generator" >&2
+	exit 1
+fi
 
 install -d -o root -g root -m 0755 /etc/dracut.conf.d /etc/systemd/logind.conf.d
 install -d -o root -g root -m 0755 /etc/systemd/system/systemd-hibernate.service.d
 install -d -o root -g polkitd -m 0750 /etc/polkit-1/rules.d
+install -d -o root -g root -m 0755 /etc/grub.d
 install -o root -g root -m 0644 \
 	"$repo_root/config/dracut/90-s4lockdown-resume.conf" \
 	/etc/dracut.conf.d/90-s4lockdown-resume.conf
@@ -33,6 +43,18 @@ install -o root -g root -m 0644 \
 install -o root -g root -m 0644 \
 	"$repo_root/config/systemd/systemd-hibernate.service.d/10-s4lockdown-grub-reboot.conf" \
 	/etc/systemd/system/systemd-hibernate.service.d/10-s4lockdown-grub-reboot.conf
+install -o root -g root -m 0755 \
+	"$repo_root/config/grub/11_s4lockdown_resume" \
+	"$grub_generator"
+if [[ -e $legacy_grub_generator ]]; then
+	unlink "$legacy_grub_generator"
+fi
+
+update-grub
+if ! grep -Fq -- "--id 's4lockdown-resume'" /boot/grub/grub.cfg; then
+	printf 'Generated GRUB configuration is missing the S4 resume entry.\n' >&2
+	exit 1
+fi
 
 if [[ -L /etc/systemd/system/hibernate.target.requires/s4lockdown-grub-reboot.service ]]; then
 	unlink /etc/systemd/system/hibernate.target.requires/s4lockdown-grub-reboot.service

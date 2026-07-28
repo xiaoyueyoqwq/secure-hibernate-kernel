@@ -48,12 +48,18 @@ produces unsigned packages. A separate job uses Ubuntu's packaged `sign-file`
 and the protected project secret to sign them. A final job without the secret
 publishes the verified Release. Access to the signing environment requires an
 explicit maintainer approval. A daily scheduled check skips complete Release
-tags, and published assets are immutable.
+tags, and the workflow refuses to modify an existing tag. GitHub currently
+reports these Releases as `immutable: false`, so this is a workflow policy, not
+a platform-level immutability guarantee.
 
 Each Release contains the project-signed image, the unsigned image for users
 who prefer an independent MOK, headers, public project certificates, metadata,
 and `SHA256SUMS`. It excludes the optional multi-gigabyte debug-symbol package.
-The full Linux source tree is not committed here.
+The exact project certificate cryptographically protects the EFI image and
+modules. A project-signed manifest covering the complete Debian packages is
+required before unattended installation; `SHA256SUMS` from the same mutable
+Release is not an independent authenticity proof. The full Linux source tree is
+not committed here.
 
 With GitHub CLI, a completed Release can be downloaded with:
 
@@ -127,8 +133,9 @@ scripts/prepare-release.sh /path/to/MOK.priv /path/to/MOK.pem auto
 `scripts/install-signed-packages.sh` cryptographically validates the PE image
 and every module against the selected certificate, checks signer metadata and
 matching headers, installs the packages, and selects the custom kernel while
-keeping official Ubuntu kernels in the five-second GRUB menu. Validation can
-be run without root or installation first:
+keeping official Ubuntu kernels in Advanced options. It preserves the user's
+existing GRUB menu visibility and timeout. Validation can be run without root
+or installation first:
 
 ```bash
 scripts/install-signed-packages.sh --check-only /path/to/signed /path/to/MOK.pem
@@ -148,8 +155,11 @@ pkexec "$(realpath scripts/install-signed-packages.sh)" \
 Polkit, logind, and systemd configuration used by this setup. It enables direct
 lid-close hibernation. The hibernation service directly requires a helper that
 selects the currently running custom kernel for the next boot; hibernation
-fails if that selection cannot be verified. This prevents an updated official
-default from being used to resume an incompatible image.
+fails if that selection cannot be verified. A dedicated top-level GRUB entry
+receives the verified kernel path, initrd path, and running command line through
+`grubenv`, avoiding the additional measured-boot events produced by parsing the
+complete Advanced submenu. This preserves exact-kernel resume even when a newer
+kernel has become the normal default.
 
 The system configuration does not create swap, modify LUKS tokens, enroll a
 MOK, or remove official kernels. Those operations remain explicit because

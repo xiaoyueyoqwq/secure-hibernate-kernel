@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+# shellcheck disable=SC1091
+. /usr/lib/grub/grub-mkconfig_lib
+
+cat <<'EOF'
+menuentry 'Secure Hibernate Resume' --class ubuntu --class gnu-linux --class gnu --class os --id 's4lockdown-resume' {
+	insmod gzio
+EOF
+
+prepare_grub_to_access_device "${GRUB_DEVICE_BOOT}" | sed 's/^/\t/'
+
+cat <<'EOF'
+	linux ${s4lockdown_linux} ${s4lockdown_cmdline}
+	initrd ${s4lockdown_initrd}
+}
+EOF

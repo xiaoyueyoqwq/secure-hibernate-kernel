@@ -76,8 +76,13 @@ jobs:
       - name: Check scripts
         if: steps.marker.outputs.build == 'true'
         run: |
-          shellcheck scripts/*.sh tests/*.sh
-          bash -n scripts/*.sh tests/*.sh
+          shellcheck scripts/*.sh tests/*.sh \
+            config/systemd/s4lockdown-grub-reboot \
+            config/grub/11_s4lockdown_resume
+          bash -n scripts/*.sh tests/*.sh \
+            config/systemd/s4lockdown-grub-reboot \
+            config/grub/11_s4lockdown_resume
+          tests/grub-resume.sh
           tests/release-decision.sh
           tests/resolve-version.sh
           tests/signing-security.sh

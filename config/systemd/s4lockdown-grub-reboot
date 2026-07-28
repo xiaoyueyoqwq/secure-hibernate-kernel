@@ -1,23 +1,118 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-kernel_release=$(uname -r)
-if [[ $kernel_release != *-s4lockdown ]]; then
-	printf 'Refusing hibernation from non-s4lockdown kernel %s\n' "$kernel_release" >&2
-	exit 1
-fi
+extract_kernel_paths() {
+	local grub_config=$1
+	local kernel_id=$2
 
-root_uuid=$(findmnt -n -o UUID /)
-submenu_id="gnulinux-advanced-${root_uuid}"
-kernel_id="gnulinux-${kernel_release}-advanced-${root_uuid}"
-entry="$submenu_id>$kernel_id"
-if ! grep -Fq "'$submenu_id'" /boot/grub/grub.cfg ||
-	! grep -Fq "'$kernel_id'" /boot/grub/grub.cfg; then
-	printf 'GRUB submenu or entry is missing for running kernel %s\n' \
-		"$kernel_release" >&2
-	exit 1
-fi
+	awk -v id="'$kernel_id'" '
+		index($0, id) { in_entry = 1; next }
+		in_entry && $1 == "linux" && linux_path == "" {
+			linux_path = $2
+		}
+		in_entry && $1 == "initrd" && initrd_args == "" {
+			$1 = ""
+			sub(/^[[:space:]]+/, "")
+			initrd_args = $0
+		}
+		in_entry && /^[[:space:]]*}/ { exit }
+		END {
+			if (linux_path == "" || initrd_args == "") exit 1
+			print linux_path
+			print initrd_args
+		}
+	' "$grub_config"
+}
 
-grub-reboot "$entry"
-sync -f /boot/grub/grubenv
-logger -t s4lockdown "Set one-shot resume boot to $kernel_release"
+running_kernel_cmdline() {
+	local cmdline_file=${1:-/proc/cmdline}
+	local arg
+	local -a args kept
+
+	read -r -a args < "$cmdline_file"
+	for arg in "${args[@]}"; do
+		[[ $arg == BOOT_IMAGE=* ]] || kept+=("$arg")
+	done
+	(( ${#kept[@]} > 0 )) || return 1
+	printf '%s' "${kept[0]}"
+	printf ' %s' "${kept[@]:1}"
+	printf '\n'
+}
+
+main() {
+	local grub_config=/boot/grub/grub.cfg
+	local grub_environment=/boot/grub/grubenv
+	local entry_id=s4lockdown-resume
+	local kernel_release kernel_id kernel_cmdline environment
+	local linux_path initrd_args
+	local -a paths initrd_paths
+
+	(( EUID == 0 )) || {
+		printf 'This helper must run as root.\n' >&2
+		return 1
+	}
+	kernel_release=$(uname -r)
+	if [[ $kernel_release != *-s4lockdown ]]; then
+		printf 'Refusing hibernation from non-s4lockdown kernel %s\n' \
+			"$kernel_release" >&2
+		return 1
+	fi
+	if [[ ! -f /boot/vmlinuz-$kernel_release ||
+		! -f /boot/initrd.img-$kernel_release ]]; then
+		printf 'Running kernel or initramfs is missing from /boot: %s\n' \
+			"$kernel_release" >&2
+		return 1
+	fi
+	if ! grep -Fq -- "--id '$entry_id'" "$grub_config"; then
+		printf 'Dedicated GRUB resume entry is missing: %s\n' "$entry_id" >&2
+		return 1
+	fi
+
+	kernel_id="gnulinux-${kernel_release}-advanced-$(findmnt -n -o UUID /)"
+	mapfile -t paths < <(extract_kernel_paths "$grub_config" "$kernel_id")
+	if (( ${#paths[@]} != 2 )); then
+		printf 'Unable to resolve exact GRUB paths for running kernel %s\n' \
+			"$kernel_release" >&2
+		return 1
+	fi
+	linux_path=${paths[0]}
+	initrd_args=${paths[1]}
+	if [[ $linux_path != */vmlinuz-"$kernel_release" ||
+		$linux_path == *[[:space:]]* ]]; then
+		printf 'Unexpected GRUB kernel path: %s\n' "$linux_path" >&2
+		return 1
+	fi
+	read -r -a initrd_paths <<< "$initrd_args"
+	(( ${#initrd_paths[@]} > 0 )) || return 1
+	for initrd_path in "${initrd_paths[@]}"; do
+		if [[ $initrd_path == *[[:space:]]* || $initrd_path != /* ]]; then
+			printf 'Unexpected GRUB initrd path: %s\n' "$initrd_path" >&2
+			return 1
+		fi
+	done
+	if [[ ${initrd_paths[-1]} != */initrd.img-"$kernel_release" ]]; then
+		printf 'GRUB initrd does not match running kernel: %s\n' "$initrd_args" >&2
+		return 1
+	fi
+	kernel_cmdline=$(running_kernel_cmdline)
+
+	grub-editenv "$grub_environment" set \
+		"s4lockdown_linux=$linux_path" \
+		"s4lockdown_initrd=$initrd_args" \
+		"s4lockdown_cmdline=$kernel_cmdline"
+	environment=$(grub-editenv "$grub_environment" list)
+	grep -Fxq "s4lockdown_linux=$linux_path" <<< "$environment"
+	grep -Fxq "s4lockdown_initrd=$initrd_args" <<< "$environment"
+	grep -Fxq "s4lockdown_cmdline=$kernel_cmdline" <<< "$environment"
+
+	grub-reboot "$entry_id"
+	environment=$(grub-editenv "$grub_environment" list)
+	grep -Fxq "next_entry=$entry_id" <<< "$environment"
+	sync -f "$grub_environment"
+	logger -t s4lockdown \
+		"Set one-shot resume entry $entry_id for $kernel_release"
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+	main "$@"
+fi

@@ -23,7 +23,7 @@ signed-linux-image-test_amd64.deb
 EOF
 [[ $("$decision" schedule true "$assets") == build=false ]]
 if "$decision" workflow_dispatch true "$assets" >/dev/null 2>&1; then
-	printf 'Manual dispatch accepted an existing immutable Release.\n' >&2
+	printf 'Manual dispatch accepted an existing complete Release.\n' >&2
 	exit 1
 fi
 

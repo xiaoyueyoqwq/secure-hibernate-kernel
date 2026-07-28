@@ -51,7 +51,7 @@ if [[ $event_name == schedule && $release_complete == true ]]; then
 fi
 
 if [[ $release_complete == true ]]; then
-	printf 'Refusing to replace immutable assets in an existing Release.\n' >&2
+	printf 'Refusing to modify assets in an existing Release; use a new tag.\n' >&2
 else
 	printf 'Existing Release is incomplete; repair it under a new tag.\n' >&2
 fi
