@@ -3,6 +3,10 @@ dist/
 work/
 .ccache/
 .codex/
+node_modules/
+manager/out/
+manager/release/
+manager/.vite/
 *.deb
 *.der
 *.key
