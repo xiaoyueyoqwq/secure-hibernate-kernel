@@ -70,6 +70,9 @@
 - Keep a secret-free push/pull-request workflow for immediate script and unit
   regression results. The scheduled release workflow skips checks when the
   current ABI Release is already complete.
+- GitHub container jobs run as root. Permission-failure tests must use a
+  UID-independent invalid target or explicitly drop privileges; mode bits alone
+  do not make a directory unwritable to root.
 - Generate and CMS-sign `release-manifest.json` only inside the protected
   signing job. The publish job must re-verify it against the repository-pinned
   project certificate and must never regenerate Release metadata.
