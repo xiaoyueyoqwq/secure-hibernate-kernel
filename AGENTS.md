@@ -67,3 +67,9 @@
 - Keep release-policy and signing-security regression tests wired into the
   GitHub Actions script-check step; a test file that CI never invokes does not
   protect the release chain.
+- Generate and CMS-sign `release-manifest.json` only inside the protected
+  signing job. The publish job must re-verify it against the repository-pinned
+  project certificate and must never regenerate Release metadata.
+- `ubuntu-7.0.0-28.28` is the only legacy Release allowed without a signed
+  Manifest. Do not add assets to it; every later tag requires both
+  `release-manifest.json` and `release-manifest.p7s`.

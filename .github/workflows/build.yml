@@ -62,6 +62,7 @@ jobs:
           fi
           scripts/release-decision.sh \
             "${{ github.event_name }}" "$release_exists" "$release_assets" \
+            "$MARKER_TAG" \
             >> "$GITHUB_OUTPUT"
 
       - name: Install build dependencies
@@ -84,6 +85,7 @@ jobs:
             config/grub/11_s4lockdown_resume
           tests/grub-resume.sh
           tests/release-decision.sh
+          tests/release-manifest.sh
           tests/resolve-version.sh
           tests/signing-security.sh
 
@@ -155,7 +157,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             ca-certificates dpkg-dev kmod linux-headers-generic-hwe-26.04 \
-            openssl sbsigntool xz-utils zstd
+            openssl python3 sbsigntool xz-utils zstd
 
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -186,15 +188,23 @@ jobs:
             dist/signed certs/secure-hibernate-project.pem
 
       - name: Assemble release files
+        env:
+          SOURCE_PACKAGE_VERSION: ${{ needs.build.outputs.source_package_version }}
+          MARKER_TAG: ${{ needs.build.outputs.marker_tag }}
         run: |
           mkdir release
-          find dist -maxdepth 1 -type f ! -name SHA256SUMS \
+          find dist -maxdepth 1 -type f \
             -exec cp -v {} release/ \;
           find dist/signed -maxdepth 1 -type f -exec cp -v {} release/ \;
           cp -v certs/secure-hibernate-project.der \
             certs/secure-hibernate-project.pem release/
-          cd release
-          sha256sum -- * > SHA256SUMS
+          kernel_release=$(< release/kernel-release.txt)
+          scripts/release-manifest.py create release \
+            --source-version "$SOURCE_PACKAGE_VERSION" \
+            --kernel-release "$kernel_release" \
+            --release-tag "$MARKER_TAG" \
+            --git-commit "$GITHUB_SHA" \
+            --private-key "$RUNNER_TEMP/project-mok.priv"
 
       - name: Upload verified release files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -215,6 +225,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
       - name: Download signed release files
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -229,6 +242,9 @@ jobs:
           SOURCE_PACKAGE_VERSION: ${{ needs.build.outputs.source_package_version }}
           LOCAL_VERSION: ${{ needs.build.outputs.local_version }}
         run: |
+          scripts/release-manifest.py verify dist \
+            --expected-release-tag "$MARKER_TAG" \
+            --expected-git-commit "$GITHUB_SHA"
           (cd dist && sha256sum --check SHA256SUMS)
           notes=$(mktemp)
           cat > "$notes" <<EOF
@@ -238,7 +254,8 @@ jobs:
           \`$LOCAL_VERSION\`.
 
           The Release also retains the unsigned image for users who prefer a
-          machine-specific MOK. Verify every file with \`SHA256SUMS\`.
+          machine-specific MOK. Authenticate the complete asset set with
+          \`release-manifest.json\` and \`release-manifest.p7s\` before use.
 
           This build permits traditional hibernation under integrity lockdown. The
           hibernation image is not authenticated; review the repository security boundary.

@@ -52,21 +52,34 @@ tags, and the workflow refuses to modify an existing tag. GitHub currently
 reports these Releases as `immutable: false`, so this is a workflow policy, not
 a platform-level immutability guarantee.
 
-Each Release contains the project-signed image, the unsigned image for users
-who prefer an independent MOK, headers, public project certificates, metadata,
-and `SHA256SUMS`. It excludes the optional multi-gigabyte debug-symbol package.
-The exact project certificate cryptographically protects the EFI image and
-modules. A project-signed manifest covering the complete Debian packages is
-required before unattended installation; `SHA256SUMS` from the same mutable
-Release is not an independent authenticity proof. The full Linux source tree is
-not committed here.
+New Releases contain the project-signed image, the unsigned image for users who
+prefer an independent MOK, headers, public project certificates, metadata,
+`SHA256SUMS`, `release-manifest.json`, and its detached CMS signature
+`release-manifest.p7s`. They exclude the optional multi-gigabyte debug-symbol
+package. The Manifest binds the Ubuntu source version, kernel release, Release
+tag, Git commit, project-certificate fingerprint, and the exact name, size, and
+SHA-256 value of every payload asset. The verifier rejects missing, additional,
+non-regular, or unsafe-named assets. The first Release,
+`ubuntu-7.0.0-28.28`, predates this format and remains available for manual
+installation only; it will not be modified retroactively.
+
+The exact project certificate cryptographically protects the EFI image,
+modules, and Release Manifest. `SHA256SUMS` remains useful for ordinary file
+checks, but is not an independent authenticity proof when hosted in the same
+mutable Release. The full Linux source tree is not committed here.
 
 With GitHub CLI, a completed Release can be downloaded with:
 
 ```bash
 gh release download ubuntu-SOURCE_PACKAGE_VERSION --dir release
-(cd release && sha256sum --check SHA256SUMS)
+scripts/release-manifest.py verify release \
+  --expected-release-tag ubuntu-SOURCE_PACKAGE_VERSION
 ```
+
+`--minimum-source-version VERSION` rejects a signed Release older than the
+recorded local source version. This is intended for the automatic updater's
+downgrade check. The complete schema and verification contract are documented
+in [`docs/release-manifest.md`](docs/release-manifest.md).
 
 ## Enroll the project MOK
 
@@ -107,7 +120,7 @@ Install the local tooling once:
 
 ```bash
 pkexec /usr/bin/apt-get install -y \
-  linux-headers-generic-hwe-26.04 openssl perl sbsigntool xz-utils zstd
+  linux-headers-generic-hwe-26.04 openssl perl python3 sbsigntool xz-utils zstd
 ```
 
 Keep the private key outside this repository and restrict it to mode `0600`:
@@ -129,6 +142,11 @@ The Release download, checksum, and local signing steps can be run together:
 ```bash
 scripts/prepare-release.sh /path/to/MOK.priv /path/to/MOK.pem auto
 ```
+
+For every new tag, `prepare-release.sh` authenticates the download with the
+project-signed Manifest before exposing any package to the local signing key.
+Only the append-only-by-project-policy legacy tag `ubuntu-7.0.0-28.28` uses its
+original `SHA256SUMS`-only manual path.
 
 `scripts/install-signed-packages.sh` cryptographically validates the PE image
 and every module against the selected certificate, checks signer metadata and
@@ -182,10 +200,12 @@ visible.
 
 Normal Ubuntu updates remain enabled, including the official HWE meta-package.
 The scheduled workflow publishes project-signed and unsigned packages when that
-meta-package moves to a new source version. Installing a published package is
-currently an explicit local operation; a future local update service can
-download, verify, install, and notify without receiving the signing key. Always
-retain at least one official Ubuntu kernel as a recovery boot option.
+meta-package moves to a new source version. New Releases now carry the signed
+Manifest required by an unattended verifier. Installing a published package is
+still an explicit local operation; the next implementation stage is the local
+update service that downloads, verifies, installs, and notifies without
+receiving the signing key. Always retain at least one official Ubuntu kernel as
+a recovery boot option.
 
 ## License
 

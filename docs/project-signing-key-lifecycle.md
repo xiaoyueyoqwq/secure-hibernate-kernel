@@ -92,15 +92,24 @@ it would receive the private-key path. The signing job must cryptographically
 verify the signed image and every module, and delete its temporary private-key
 file under `if: always()`.
 
-The workflow treats a published Release as append-only. It creates a draft,
-uploads and verifies the complete asset set, publishes it, and refuses a later
-dispatch for the same source tag. GitHub may still permit an authorized actor
-to modify assets when its Release API reports `immutable: false`; workflow
-refusal is not a platform-level immutability guarantee. Exact-certificate
-EFI/module verification remains mandatory, and unattended package installation
-requires a project-signed manifest covering the complete Debian assets. An
-incomplete draft may be deleted and rebuilt because it has never been
-published; every published revision requires a new, distinct tag.
+The workflow treats a published Release as append-only. In the protected
+signing job, `scripts/release-manifest.py create` generates canonical checksums
+and a versioned JSON Manifest, then creates a detached CMS signature with the
+project key. The Manifest covers every payload asset but necessarily excludes
+itself and its detached signature. The publish job has no private key and
+re-verifies the signature, exact asset set, hashes, sizes, certificate, package
+metadata, tag, and Git commit before creating the draft Release.
+
+The workflow publishes that verified draft and refuses a later dispatch for the
+same source tag. GitHub may still permit an authorized actor to modify assets
+when its Release API reports `immutable: false`; workflow refusal is not a
+platform-level immutability guarantee. Local clients pin the repository copy of
+`certs/secure-hibernate-project.pem`, so replacing a Manifest, checksum file, or
+Release asset without the project private key fails verification. An incomplete
+draft may be deleted and rebuilt because it has never been published; every
+published revision requires a new, distinct tag. The legacy
+`ubuntu-7.0.0-28.28` Release predates the signed Manifest and is retained only
+for explicit manual installation.
 
 ## Planned rotation
 

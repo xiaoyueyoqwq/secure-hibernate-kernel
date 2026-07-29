@@ -50,10 +50,23 @@ if ! gh release download "$marker_tag" --repo "$release_repo" --dir "$staging_di
 	exit 1
 fi
 
-(
-	cd "$staging_dir"
-	sha256sum --check SHA256SUMS
-)
+if [[ -f $staging_dir/release-manifest.json &&
+	-f $staging_dir/release-manifest.p7s ]]; then
+	"$repo_root/scripts/release-manifest.py" verify "$staging_dir" \
+		--expected-release-tag "$marker_tag"
+elif [[ $marker_tag == ubuntu-7.0.0-28.28 &&
+	! -e $staging_dir/release-manifest.json &&
+	! -e $staging_dir/release-manifest.p7s ]]; then
+	printf 'Warning: verifying legacy Release %s with SHA256SUMS only.\n' \
+		"$marker_tag" >&2
+	(
+		cd "$staging_dir"
+		sha256sum --check SHA256SUMS
+	)
+else
+	printf 'Release %s is missing its signed Manifest.\n' "$marker_tag" >&2
+	exit 1
+fi
 
 recorded_version=$(< "$staging_dir/ubuntu-source-package-version.txt")
 if [[ $recorded_version != "$source_package_version" ]]; then

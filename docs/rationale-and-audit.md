@@ -74,6 +74,15 @@ an isolated GitHub Actions signing environment, while build and release-upload
 jobs run without it. This separation limits accidental exposure but does not
 eliminate the impact of a signing-key or signing-workflow compromise.
 
+For unattended distribution, the same project key signs a detached CMS
+signature over a structured Release Manifest. A verifier pinned to the
+repository certificate checks the source version, kernel release, Release tag,
+Git commit, certificate fingerprint, and exact asset names, sizes, and hashes
+before package-level EFI and module validation. This prevents an actor who can
+edit a mutable GitHub Release, but cannot use the project key, from substituting
+packages or metadata. It does not protect against compromise or authorized
+misuse of the project signing key itself.
+
 ## Upstream positioning
 
 An upstream proposal should present this as an expert policy choice, not as

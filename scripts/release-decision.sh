@@ -2,10 +2,10 @@
 set -euo pipefail
 
 usage() {
-	printf 'Usage: release-decision.sh EVENT_NAME RELEASE_EXISTS RELEASE_ASSET_FILE\n'
+	printf 'Usage: release-decision.sh EVENT_NAME RELEASE_EXISTS RELEASE_ASSET_FILE [MARKER_TAG]\n'
 }
 
-if [[ $# -ne 3 ]]; then
+if [[ $# -lt 3 || $# -gt 4 ]]; then
 	usage >&2
 	exit 2
 fi
@@ -13,6 +13,7 @@ fi
 event_name=$1
 release_exists=$2
 release_assets=$3
+marker_tag=${4:-}
 
 if [[ $event_name != schedule && $event_name != workflow_dispatch ]]; then
 	printf 'Unsupported GitHub event: %s\n' "$event_name" >&2
@@ -32,6 +33,11 @@ if [[ $release_exists == false ]]; then
 	exit 0
 fi
 
+legacy_release=false
+if [[ $marker_tag == ubuntu-7.0.0-28.28 ]]; then
+	legacy_release=true
+fi
+
 release_complete=false
 if grep -Fxq SHA256SUMS "$release_assets" &&
 	grep -Fxq kernel-release.txt "$release_assets" &&
@@ -41,7 +47,11 @@ if grep -Fxq SHA256SUMS "$release_assets" &&
 	grep -Fxq secure-hibernate-project.pem "$release_assets" &&
 	grep -Eq '^linux-headers-.*_amd64\.deb$' "$release_assets" &&
 	grep -Eq '^linux-image-.*_amd64\.deb$' "$release_assets" &&
-	grep -Eq '^signed-linux-image-.*_amd64\.deb$' "$release_assets"; then
+	grep -Eq '^signed-linux-image-.*_amd64\.deb$' "$release_assets" &&
+	{ $legacy_release || {
+		grep -Fxq release-manifest.json "$release_assets" &&
+		grep -Fxq release-manifest.p7s "$release_assets"
+	}; }; then
 	release_complete=true
 fi
 
