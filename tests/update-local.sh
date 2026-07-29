@@ -265,8 +265,8 @@ S4LOCKDOWN_TEST_ROOT="$state_failure_root" \
 	"$mock_repo/scripts/update-local.py" check \
 	--source-version 7.0.0-30.30 --source-dir "$release_30" \
 	--installed-source-version 7.0.0-29.29 >/dev/null
-mkdir -p "$state_failure_root/var/lib/s4lockdown-update"
-chmod 0555 "$state_failure_root/var/lib/s4lockdown-update"
+mkdir -p "$state_failure_root/var/lib"
+ln -s /proc "$state_failure_root/var/lib/s4lockdown-update"
 install_count_before=$(grep -c '^install ' "$temp_dir/package.log")
 set +e
 S4LOCKDOWN_TEST_ROOT="$state_failure_root" \
@@ -282,6 +282,5 @@ if (( state_failure_status == 0 || install_count_after != install_count_before )
 	printf 'State-directory failure did not stop before package installation.\n' >&2
 	exit 1
 fi
-chmod 0755 "$state_failure_root/var/lib/s4lockdown-update"
 
 printf 'local update controller tests passed\n'
