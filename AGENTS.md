@@ -67,9 +67,24 @@
 - Keep release-policy and signing-security regression tests wired into the
   GitHub Actions script-check step; a test file that CI never invokes does not
   protect the release chain.
+- Keep a secret-free push/pull-request workflow for immediate script and unit
+  regression results. The scheduled release workflow skips checks when the
+  current ABI Release is already complete.
 - Generate and CMS-sign `release-manifest.json` only inside the protected
   signing job. The publish job must re-verify it against the repository-pinned
   project certificate and must never regenerate Release metadata.
 - `ubuntu-7.0.0-28.28` is the only legacy Release allowed without a signed
   Manifest. Do not add assets to it; every later tag requires both
   `release-manifest.json` and `release-manifest.p7s`.
+- Keep updater downloads in the unprivileged check service. Before root package
+  processing, copy every staged asset into a newly created root-owned inode,
+  remove the unprivileged source, and repeat both Manifest and package signature
+  verification. Changing ownership does not revoke an already open descriptor.
+- The root updater stage must independently resolve the current Ubuntu HWE
+  candidate and require an exact source-version and Release-tag match. A signed
+  Manifest proves authenticity but does not by itself authorize rollout order.
+- The updater must never prune kernels or restart automatically. Preserve dpkg
+  contention as a deferred state, record installation atomically, and change
+  GRUB only through the verified package installer after dpkg succeeds.
+- Name every root-owned trust-boundary directory explicitly in installer calls;
+  automatically created parent directories can inherit a broader default mode.

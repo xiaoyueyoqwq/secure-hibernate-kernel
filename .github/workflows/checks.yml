@@ -1,0 +1,47 @@
+name: Check project scripts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ubuntu:resolute
+    steps:
+      - name: Install test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates dpkg-dev findutils gawk git grep kmod \
+            linux-headers-generic-hwe-26.04 openssl perl psmisc python3 sed \
+            shellcheck systemd util-linux xz-utils zstd
+
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Check scripts and units
+        run: |
+          shellcheck scripts/*.sh tests/*.sh \
+            config/systemd/s4lockdown-grub-reboot \
+            config/grub/11_s4lockdown_resume
+          bash -n scripts/*.sh tests/*.sh \
+            config/systemd/s4lockdown-grub-reboot \
+            config/grub/11_s4lockdown_resume
+          tests/grub-resume.sh
+          tests/release-decision.sh
+          tests/release-manifest.sh
+          tests/resolve-version.sh
+          tests/signing-security.sh
+          tests/systemd-units.sh
+          tests/update-local.sh

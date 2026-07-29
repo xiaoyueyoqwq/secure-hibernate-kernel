@@ -1,0 +1,18 @@
+[Unit]
+Description=Process a verified s4lockdown kernel update
+Documentation=https://github.com/xiaoyueyoqwq/secure-hibernate-kernel
+Requires=s4lockdown-update-check.service
+After=s4lockdown-update-check.service
+ConditionACPower=true
+
+[Service]
+Type=oneshot
+StateDirectory=s4lockdown-update
+StateDirectoryMode=0755
+ExecStart=/usr/local/lib/s4lockdown-update/scripts/update-local.sh install
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=yes
+ProtectHome=yes
+UMask=0077

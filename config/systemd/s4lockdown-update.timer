@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for s4lockdown kernel updates daily
+
+[Timer]
+OnBootSec=15min
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+Unit=s4lockdown-update.service
+
+[Install]
+WantedBy=timers.target

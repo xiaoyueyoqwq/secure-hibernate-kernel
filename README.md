@@ -200,12 +200,27 @@ visible.
 
 Normal Ubuntu updates remain enabled, including the official HWE meta-package.
 The scheduled workflow publishes project-signed and unsigned packages when that
-meta-package moves to a new source version. New Releases now carry the signed
-Manifest required by an unattended verifier. Installing a published package is
-still an explicit local operation; the next implementation stage is the local
-update service that downloads, verifies, installs, and notifies without
-receiving the signing key. Always retain at least one official Ubuntu kernel as
-a recovery boot option.
+meta-package moves to a new source version. New Releases carry the signed
+Manifest required by the local update controller.
+
+Install the controller and enabled daily timer with a desktop authorization
+prompt:
+
+```bash
+pkexec "$(realpath scripts/install-update-controller.sh)"
+```
+
+The default `check-and-notify` policy downloads and verifies as a dedicated
+low-privilege user. A separate root service independently resolves the current
+HWE version, copies assets into new root-owned files, and repeats all
+verification. It records an available update but requires explicit approval
+before installation. `manual` and `automatic-install` policies are also
+available. No policy restarts the machine or removes kernels. Official Ubuntu
+kernels and the HWE meta-package remain independent recovery paths.
+
+The complete service model, policy configuration, state files, manual commands,
+and failure behavior are documented in
+[`docs/local-updater.md`](docs/local-updater.md).
 
 ## License
 

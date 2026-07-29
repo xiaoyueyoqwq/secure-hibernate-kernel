@@ -72,7 +72,7 @@ jobs:
             bc bison build-essential ccache cpio debhelper dpkg-dev dwarves fakeroot \
             flex gawk kmod libdw-dev libelf-dev libssl-dev \
             linux-headers-generic-hwe-26.04 openssl patch perl \
-            python3 rsync shellcheck xz-utils zstd
+            psmisc python3 rsync shellcheck systemd xz-utils zstd
 
       - name: Check scripts
         if: steps.marker.outputs.build == 'true'
@@ -88,6 +88,8 @@ jobs:
           tests/release-manifest.sh
           tests/resolve-version.sh
           tests/signing-security.sh
+          tests/systemd-units.sh
+          tests/update-local.sh
 
       - name: Restore compiler cache
         if: steps.marker.outputs.build == 'true'
