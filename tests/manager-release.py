@@ -230,6 +230,7 @@ class ManagerReleaseTests(unittest.TestCase):
         )
         self.assertIn(flutter_action, checks)
         self.assertNotIn("actions/cache@v2", checks)
+        self.assertIn("ca-certificates curl dpkg-dev", checks)
         self.assertIn("gawk git grep jq kmod", checks)
         self.assertIn("python3 tests/manager-release.py", checks)
         kernel_workflow = (
