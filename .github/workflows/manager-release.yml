@@ -3,14 +3,14 @@ name: Build and release Secure Hibernate Manager
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "manager-v*"
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: manager-release-${{ github.ref }}
+  group: manager-release
   cancel-in-progress: false
 
 jobs:
@@ -20,13 +20,13 @@ jobs:
     permissions:
       contents: read
     outputs:
+      should_publish: ${{ steps.marker.outputs.build }}
       version: ${{ steps.metadata.outputs.version }}
       release_tag: ${{ steps.metadata.outputs.release_tag }}
       deb_name: ${{ steps.metadata.outputs.deb_name }}
       bundle_name: ${{ steps.metadata.outputs.bundle_name }}
       candidate_artifact: ${{ steps.metadata.outputs.candidate_artifact }}
       release_artifact: ${{ steps.metadata.outputs.release_artifact }}
-      publish: ${{ steps.metadata.outputs.publish }}
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -36,36 +36,54 @@ jobs:
 
       - name: Validate Manager version and event
         id: metadata
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           scripts/manager-release.py metadata \
             --pubspec manager/pubspec.yaml \
             --event-name "$GITHUB_EVENT_NAME" \
             --ref-type "$GITHUB_REF_TYPE" \
             --ref-name "$GITHUB_REF_NAME" \
+            --default-branch "$DEFAULT_BRANCH" \
             >> "$GITHUB_OUTPUT"
 
-      - name: Require tagged source to be on the default branch
-        if: steps.metadata.outputs.publish == 'true'
+      - name: Check Manager release marker
+        id: marker
         env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
         run: |
-          test -n "$DEFAULT_BRANCH"
-          git merge-base --is-ancestor \
-            "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"
+          release_assets=$(mktemp)
+          if gh release view "$RELEASE_TAG" --json assets \
+             --jq '.assets[].name' > "$release_assets" 2>/dev/null; then
+            release_exists=true
+          else
+            release_exists=false
+          fi
+          scripts/manager-release.py decision \
+            --pubspec manager/pubspec.yaml \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --release-exists "$release_exists" \
+            --release-assets "$release_assets" \
+            >> "$GITHUB_OUTPUT"
 
       - name: Install Linux build dependencies
+        if: steps.marker.outputs.build == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang cmake dpkg-dev libgtk-3-dev liblzma-dev ninja-build pkg-config
 
       - name: Install pinned Flutter SDK
+        if: steps.marker.outputs.build == 'true'
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: 3.44.8
           channel: stable
 
       - name: Verify pinned Flutter revision
+        if: steps.marker.outputs.build == 'true'
         run: |
           flutter --version --machine > "$RUNNER_TEMP/flutter-version.json"
           python3 - manager/.metadata "$RUNNER_TEMP/flutter-version.json" <<'PY'
@@ -88,6 +106,7 @@ jobs:
           PY
 
       - name: Check and build Manager
+        if: steps.marker.outputs.build == 'true'
         working-directory: manager
         run: |
           flutter pub get
@@ -97,7 +116,9 @@ jobs:
           OUTPUT_DIR="$GITHUB_WORKSPACE/release" scripts/build-deb.sh
 
       - name: Assemble Manager candidate
+        if: steps.marker.outputs.build == 'true'
         run: |
+          python3 tests/manager-release.py
           python3 tests/manager-package.py
           scripts/manager-release.py prepare release \
             --pubspec manager/pubspec.yaml \
@@ -109,6 +130,7 @@ jobs:
           (cd release && sha256sum --check SHA256SUMS)
 
       - name: Upload Manager candidate
+        if: steps.marker.outputs.build == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.metadata.outputs.candidate_artifact }}
@@ -116,9 +138,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  attest:
+  sign:
     needs: build
-    if: github.event_name == 'push' && needs.build.outputs.publish == 'true'
+    if: needs.build.outputs.should_publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -149,7 +171,10 @@ jobs:
         id: provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
-          subject-path: release/${{ needs.build.outputs.deb_name }}
+          subject-path: |
+            release/${{ needs.build.outputs.deb_name }}
+            release/SHA256SUMS
+            release/manager-release.json
 
       - name: Preserve and verify signed provenance
         env:
@@ -164,14 +189,16 @@ jobs:
             --expected-release-tag "${{ needs.build.outputs.release_tag }}" \
             --expected-git-commit "$GITHUB_SHA" \
             --require-attestation
-          gh attestation verify "release/$DEB_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --bundle "release/$BUNDLE_NAME" \
-            --signer-workflow \
-              "github.com/$GITHUB_REPOSITORY/.github/workflows/manager-release.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" \
-            --deny-self-hosted-runners
+          for subject in "$DEB_NAME" SHA256SUMS manager-release.json; do
+            gh attestation verify "release/$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --bundle "release/$BUNDLE_NAME" \
+              --signer-workflow \
+                "github.com/$GITHUB_REPOSITORY/.github/workflows/manager-release.yml" \
+              --source-ref "$GITHUB_REF" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
 
       - name: Upload attested Manager release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -182,15 +209,14 @@ jobs:
           retention-days: 14
 
   publish:
-    needs: [build, attest]
-    if: github.event_name == 'push' && needs.build.outputs.publish == 'true'
+    needs: [build, sign]
+    if: needs.build.outputs.should_publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: manager-release
     permissions:
       contents: write
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
@@ -209,25 +235,31 @@ jobs:
           DEB_NAME: ${{ needs.build.outputs.deb_name }}
           BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
         run: |
-          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$GITHUB_REF_TYPE" = branch
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
           scripts/manager-release.py verify release \
             --pubspec manager/pubspec.yaml \
             --expected-release-tag "$RELEASE_TAG" \
             --expected-git-commit "$GITHUB_SHA" \
             --require-attestation
           (cd release && sha256sum --check SHA256SUMS)
-          gh attestation verify "release/$DEB_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --bundle "release/$BUNDLE_NAME" \
-            --signer-workflow \
-              "github.com/$GITHUB_REPOSITORY/.github/workflows/manager-release.yml" \
-            --source-ref "$GITHUB_REF" \
-            --source-digest "$GITHUB_SHA" \
-            --deny-self-hosted-runners
+          for subject in "$DEB_NAME" SHA256SUMS manager-release.json; do
+            gh attestation verify "release/$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --bundle "release/$BUNDLE_NAME" \
+              --signer-workflow \
+                "github.com/$GITHUB_REPOSITORY/.github/workflows/manager-release.yml" \
+              --source-ref "$GITHUB_REF" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Refusing to modify existing Manager Release $RELEASE_TAG." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin \
+             "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Refusing to reuse existing Manager tag $RELEASE_TAG." >&2
             exit 1
           fi
 
@@ -245,7 +277,8 @@ jobs:
           import sys
 
           repository = os.environ["GITHUB_REPOSITORY"]
-          tag = os.environ["RELEASE_TAG"]
+          source_ref = os.environ["GITHUB_REF"]
+          source_digest = os.environ["GITHUB_SHA"]
           package = os.environ["DEB_NAME"]
           bundle = os.environ["BUNDLE_NAME"]
           notes = f"""Secure Hibernate Manager {os.environ['VERSION']}.
@@ -261,7 +294,8 @@ jobs:
             --repo {repository} \\
             --bundle {bundle} \\
             --signer-workflow github.com/{repository}/.github/workflows/manager-release.yml \\
-            --source-ref refs/tags/{tag} \\
+            --source-ref {source_ref} \\
+            --source-digest {source_digest} \\
             --deny-self-hosted-runners
           ```
           """
@@ -276,6 +310,6 @@ jobs:
             --draft \
             --latest=false \
             --title "Secure Hibernate Manager $VERSION" \
-            --verify-tag \
+            --target "$GITHUB_SHA" \
             --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release edit "$RELEASE_TAG" --draft=false --latest=false

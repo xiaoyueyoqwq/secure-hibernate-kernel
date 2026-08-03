@@ -131,24 +131,19 @@ MOK, modify LUKS or TPM metadata, install a kernel, or restart the machine.
 ## Releases
 
 Manager Releases are independent from kernel Releases. Update the `version:` in
-`pubspec.yaml`, merge that commit into the default branch, then create and push
-the exact matching tag:
+`pubspec.yaml` and merge that commit into `main`; no manual tag or Release is
+required.
 
-```bash
-git tag manager-v1.0.0+25
-git push origin manager-v1.0.0+25
-```
-
-The `Build and release Secure Hibernate Manager` workflow rejects a tag that
-does not match `pubspec.yaml` or whose commit is not reachable from the default
-branch. It builds and tests the amd64 package, verifies its Debian metadata,
-creates `SHA256SUMS` and `manager-release.json`, and attaches GitHub/Sigstore
-build provenance. Publication waits for approval in the `manager-release`
-Environment and refuses to modify an existing Release.
-
-A manual workflow run performs the same build and verification but creates only
-a 14-day Actions artifact. It never publishes. Kernel tags use the separate
-`ubuntu-*` namespace and do not invoke this workflow.
+The `Build and release Secure Hibernate Manager` workflow compares the exact
+`manager-v<version>` Release with the source version. It skips a complete
+existing Release. For a new version it builds and tests the amd64 package,
+verifies its Debian metadata, creates `SHA256SUMS` and
+`manager-release.json`, signs all three files together with GitHub
+OIDC/Sigstore provenance, creates the version tag at the workflow commit, and
+publishes the Release automatically. It refuses incomplete Releases, unexpected
+assets, and existing tags. A manual workflow run is an explicit retry for an
+unpublished version and cannot replace a completed Release. Kernel tags use the
+separate `ubuntu-*` namespace and do not invoke this workflow.
 
 The application icon is a recolored rendering of the AMP icon from the
 CC0-1.0 `gilbarbara/logos` collection, also indexed by SVG Repo as asset

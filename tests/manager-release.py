@@ -24,7 +24,7 @@ VERSION = re.search(
 TAG = f"manager-v{VERSION}"
 COMMIT = "a" * 40
 DEB_NAME = f"secure-hibernate-manager_{VERSION}_amd64.deb"
-BUNDLE_NAME = f"{DEB_NAME}.intoto.jsonl"
+BUNDLE_NAME = f"manager-release-{VERSION}.intoto.jsonl"
 
 
 class ManagerReleaseTests(unittest.TestCase):
@@ -91,7 +91,7 @@ class ManagerReleaseTests(unittest.TestCase):
             check=check,
         )
 
-    def test_exact_tag_enables_publish(self) -> None:
+    def test_default_branch_resolves_release_metadata(self) -> None:
         result = self.run_tool(
             "metadata",
             "--pubspec",
@@ -99,19 +99,20 @@ class ManagerReleaseTests(unittest.TestCase):
             "--event-name",
             "push",
             "--ref-type",
-            "tag",
+            "branch",
             "--ref-name",
-            TAG,
+            "main",
+            "--default-branch",
+            "main",
         )
         outputs = dict(line.split("=", 1) for line in result.stdout.splitlines())
         self.assertEqual(outputs["version"], VERSION)
         self.assertEqual(outputs["release_tag"], TAG)
         self.assertEqual(outputs["deb_name"], DEB_NAME)
-        self.assertEqual(outputs["publish"], "true")
 
-    def test_wrong_or_kernel_tag_is_rejected(self) -> None:
-        for tag in ("manager-v0.1.0+23", "ubuntu-7.0.0-28.28"):
-            with self.subTest(tag=tag):
+    def test_non_default_branch_or_tag_is_rejected(self) -> None:
+        for ref_type, ref_name in (("branch", "feature"), ("tag", TAG)):
+            with self.subTest(ref_type=ref_type, ref_name=ref_name):
                 result = self.run_tool(
                     "metadata",
                     "--pubspec",
@@ -119,14 +120,16 @@ class ManagerReleaseTests(unittest.TestCase):
                     "--event-name",
                     "push",
                     "--ref-type",
-                    "tag",
+                    ref_type,
                     "--ref-name",
-                    tag,
+                    ref_name,
+                    "--default-branch",
+                    "main",
                     check=False,
                 )
                 self.assertNotEqual(result.returncode, 0)
 
-    def test_dispatch_never_enables_publish(self) -> None:
+    def test_dispatch_from_default_branch_resolves_release_metadata(self) -> None:
         result = self.run_tool(
             "metadata",
             "--pubspec",
@@ -134,11 +137,91 @@ class ManagerReleaseTests(unittest.TestCase):
             "--event-name",
             "workflow_dispatch",
             "--ref-type",
-            "tag",
+            "branch",
             "--ref-name",
-            TAG,
+            "main",
+            "--default-branch",
+            "main",
         )
-        self.assertIn("publish=false\n", result.stdout)
+        self.assertIn(f"release_tag={TAG}\n", result.stdout)
+
+    def test_release_decision_builds_new_and_skips_complete_push(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            assets = Path(temporary) / "assets"
+            assets.write_text("", encoding="ascii")
+            result = self.run_tool(
+                "decision",
+                "--pubspec",
+                str(PUBSPEC),
+                "--event-name",
+                "push",
+                "--release-exists",
+                "false",
+                "--release-assets",
+                str(assets),
+            )
+            self.assertEqual(result.stdout, "build=true\n")
+
+            assets.write_text(
+                "\n".join(
+                    (DEB_NAME, BUNDLE_NAME, "manager-release.json", "SHA256SUMS")
+                )
+                + "\n",
+                encoding="ascii",
+            )
+            result = self.run_tool(
+                "decision",
+                "--pubspec",
+                str(PUBSPEC),
+                "--event-name",
+                "push",
+                "--release-exists",
+                "true",
+                "--release-assets",
+                str(assets),
+            )
+            self.assertEqual(result.stdout, "build=false\n")
+
+    def test_release_decision_rejects_republish_and_incomplete_release(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            assets = Path(temporary) / "assets"
+            assets.write_text(
+                "\n".join(
+                    (DEB_NAME, BUNDLE_NAME, "manager-release.json", "SHA256SUMS")
+                )
+                + "\n",
+                encoding="ascii",
+            )
+            result = self.run_tool(
+                "decision",
+                "--pubspec",
+                str(PUBSPEC),
+                "--event-name",
+                "workflow_dispatch",
+                "--release-exists",
+                "true",
+                "--release-assets",
+                str(assets),
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+
+            assets.write_text(f"{DEB_NAME}\n", encoding="ascii")
+            result = self.run_tool(
+                "decision",
+                "--pubspec",
+                str(PUBSPEC),
+                "--event-name",
+                "push",
+                "--release-exists",
+                "true",
+                "--release-assets",
+                str(assets),
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
 
     def test_prepare_and_verify_exact_release(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -195,10 +278,11 @@ class ManagerReleaseTests(unittest.TestCase):
             (directory / BUNDLE_NAME).write_text("{}\n", encoding="ascii")
             self.verify(directory, "--require-attestation")
 
-    def test_workflow_separates_manual_build_and_tag_publish(self) -> None:
+    def test_workflow_automatically_signs_and_publishes_new_versions(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         triggers = workflow.split("\npermissions:\n", 1)[0]
-        self.assertIn('      - "manager-v*"\n', triggers)
+        self.assertIn("branches:\n      - main\n", triggers)
+        self.assertNotIn("tags:", triggers)
         self.assertNotIn("ubuntu-", triggers)
         self.assertNotIn("schedule:", triggers)
         self.assertIn("flutter-version: 3.44.8", workflow)
@@ -210,16 +294,22 @@ class ManagerReleaseTests(unittest.TestCase):
         self.assertIn("manager/.metadata", workflow)
         self.assertIn('get("frameworkRevision")', workflow)
         self.assertNotIn("cache: true", workflow)
-        self.assertIn("github.event_name == 'push'", workflow)
-        self.assertIn("needs.build.outputs.publish == 'true'", workflow)
-        self.assertIn("git merge-base --is-ancestor", workflow)
+        self.assertIn("scripts/manager-release.py decision", workflow)
+        self.assertIn("needs.build.outputs.should_publish == 'true'", workflow)
         self.assertIn("attestations: write", workflow)
         self.assertIn("id-token: write", workflow)
         self.assertIn("contents: write", workflow)
-        self.assertIn("environment: manager-release", workflow)
-        self.assertIn("--verify-tag", workflow)
+        self.assertNotIn("environment: manager-release", workflow)
+        self.assertNotIn("--verify-tag", workflow)
+        self.assertIn('--target "$GITHUB_SHA"', workflow)
         self.assertIn("--latest=false", workflow)
         self.assertIn("--require-attestation", workflow)
+        self.assertIn("release/SHA256SUMS", workflow)
+        self.assertIn("release/manager-release.json", workflow)
+        self.assertIn(
+            'for subject in "$DEB_NAME" SHA256SUMS manager-release.json',
+            workflow,
+        )
         self.assertIn("--signer-workflow", workflow)
         self.assertIn("--source-ref", workflow)
         self.assertIn("--source-digest", workflow)

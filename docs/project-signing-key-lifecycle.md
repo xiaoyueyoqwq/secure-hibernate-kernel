@@ -115,18 +115,18 @@ of the canonical repository, exact Git commit, complete asset set, sizes, and
 SHA-256 values; it repeats those checks after copying the files across the root
 trust boundary. No later Manifest-less tag is accepted.
 
-Manager Releases use a separate trust and version domain. The
-`manager-release.yml` workflow accepts only an exact `manager-v<pubspec
-version>` tag whose commit is reachable from the default branch. Its build and
-attestation jobs have read-only repository access; the publish job receives
-`contents: write` only after approval in a separate `manager-release`
-Environment. Configure that Environment to allow only `manager-v*` tags and
-require a maintainer approval.
+Manager Releases use a separate trust and version domain. On each `main` push,
+`manager-release.yml` compares the exact `manager-v<pubspec version>` marker
+with the published asset set. It skips a complete Release and automatically
+builds, signs, tags, and publishes only a new version. Build and signing jobs
+have read-only repository access; only the final verified publish job receives
+`contents: write`.
 
 The Manager package does not use or receive `PROJECT_MOK_PRIVATE_KEY_B64`.
-GitHub's OIDC-backed build provenance authenticates the exact `.deb`, workflow,
-source tag, and commit. The Release also carries a canonical checksum and fixed
-Manager descriptor. Never add Manager assets to an `ubuntu-*` kernel Release or
+GitHub's OIDC-backed provenance signs the exact `.deb`, canonical checksum, and
+fixed Manager descriptor together and authenticates the workflow, source
+branch, and commit. The publish job verifies every subject before creating the
+tag and Release. Never add Manager assets to an `ubuntu-*` kernel Release or
 kernel assets to a `manager-v*` Release.
 
 ## Planned rotation

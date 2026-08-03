@@ -46,10 +46,10 @@ fallback before changing the machine. Downloads run as a dedicated
 low-privilege account; privileged work uses a fixed root-owned Helper through
 Polkit and repeats Release and package verification.
 
-Manager and kernel Releases use independent version axes. Manager tags are
+Manager and kernel Releases use independent version axes. Manager Releases use
 `manager-v<version>` from `manager/pubspec.yaml`; kernel tags remain
-`ubuntu-<source-version>`. A Manager tag builds only the amd64 Manager package,
-while the scheduled kernel workflow never builds the Manager.
+`ubuntu-<source-version>`. A new Manager version on `main` builds only the amd64
+Manager package, while the scheduled kernel workflow never builds the Manager.
 
 Download a published Manager Release, or build it locally from `manager/`:
 
@@ -63,12 +63,12 @@ Package installation deploys the application and update controller. It does
 not enroll the project MOK, install a kernel, change LUKS/TPM metadata, or
 restart automatically. Those operations remain explicit steps in the Manager.
 
-The `Build and release Secure Hibernate Manager` workflow can also be run
-manually to produce a 14-day Actions artifact without publishing a Release.
-Publishing requires an exact version tag and approval through the protected
-`manager-release` Environment. The application icon is a recolored rendering
-of the CC0-1.0 AMP icon from `gilbarbara/logos`. CC0 does not grant trademark
-rights; this project is not affiliated with or endorsed by the AMP project.
+The `Build and release Secure Hibernate Manager` workflow checks the version on
+every `main` push. It skips an existing complete Release; a new version is
+built, tested, signed with GitHub OIDC/Sigstore provenance, and published
+automatically. The application icon is a recolored rendering of the CC0-1.0 AMP
+icon from `gilbarbara/logos`. CC0 does not grant trademark rights; this project
+is not affiliated with or endorsed by the AMP project.
 
 ## Release chain
 

@@ -71,7 +71,7 @@ def expected_names(version: str) -> dict[str, str]:
         "version": version,
         "release_tag": f"{TAG_PREFIX}{version}",
         "deb_name": deb,
-        "bundle_name": f"{deb}.intoto.jsonl",
+        "bundle_name": f"manager-release-{version}.intoto.jsonl",
         "candidate_artifact": f"manager-candidate-{version}",
         "release_artifact": f"manager-release-{version}",
     }
@@ -165,23 +165,50 @@ def validate_directory_shape(directory: Path, version: str, require_attestation:
 def metadata_command(arguments: argparse.Namespace) -> None:
     version = parse_version(arguments.pubspec)
     names = expected_names(version)
-    if arguments.event_name == "push":
-        if arguments.ref_type != "tag":
-            fail("Manager publication requires a tag push")
-        if arguments.ref_name != names["release_tag"]:
-            fail(
-                "Manager tag does not match manager/pubspec.yaml: "
-                f"expected {names['release_tag']}, received {arguments.ref_name}"
-            )
-        publish = "true"
-    elif arguments.event_name == "workflow_dispatch":
-        publish = "false"
-    else:
+    if arguments.event_name not in {"push", "workflow_dispatch"}:
         fail(f"Unsupported Manager release event: {arguments.event_name}")
+    if (
+        arguments.ref_type != "branch"
+        or arguments.ref_name != arguments.default_branch
+    ):
+        fail("Manager publication must run from the default branch")
 
-    outputs = {**names, "publish": publish}
-    for key, value in outputs.items():
+    for key, value in names.items():
         print(f"{key}={value}")
+
+
+def decision_command(arguments: argparse.Namespace) -> None:
+    version = parse_version(arguments.pubspec)
+    names = expected_names(version)
+    if arguments.event_name not in {"push", "workflow_dispatch"}:
+        fail(f"Unsupported Manager release event: {arguments.event_name}")
+    if arguments.release_exists == "false":
+        print("build=true")
+        return
+
+    regular_file(
+        arguments.release_assets,
+        "Manager Release asset list",
+        MAX_DESCRIPTOR_SIZE,
+    )
+    try:
+        lines = arguments.release_assets.read_text(encoding="ascii").splitlines()
+    except UnicodeDecodeError:
+        fail("Manager Release asset list must be ASCII")
+    actual = set(lines)
+    if len(actual) != len(lines) or "" in actual:
+        fail("Manager Release asset list is malformed")
+    expected = {
+        names["deb_name"],
+        names["bundle_name"],
+        DESCRIPTOR_NAME,
+        CHECKSUMS_NAME,
+    }
+    if actual != expected:
+        fail("Existing Manager Release is incomplete or has unexpected assets")
+    if arguments.event_name == "workflow_dispatch":
+        fail("Refusing to modify an existing complete Manager Release")
+    print("build=false")
 
 
 def prepare_command(arguments: argparse.Namespace) -> None:
@@ -285,7 +312,22 @@ def parser() -> argparse.ArgumentParser:
     metadata.add_argument("--event-name", required=True)
     metadata.add_argument("--ref-type", required=True)
     metadata.add_argument("--ref-name", required=True)
+    metadata.add_argument("--default-branch", required=True)
     metadata.set_defaults(handler=metadata_command)
+
+    decision = commands.add_parser(
+        "decision",
+        help="decide whether a Manager Release is new",
+    )
+    decision.add_argument("--pubspec", type=Path, required=True)
+    decision.add_argument("--event-name", required=True)
+    decision.add_argument(
+        "--release-exists",
+        choices=("true", "false"),
+        required=True,
+    )
+    decision.add_argument("--release-assets", type=Path, required=True)
+    decision.set_defaults(handler=decision_command)
 
     prepare = commands.add_parser("prepare", help="assemble checksum and release metadata")
     prepare.add_argument("directory", type=Path)

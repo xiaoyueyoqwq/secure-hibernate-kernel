@@ -188,6 +188,11 @@
 - Keep Manager and kernel publication independent. `manager-v<pubspec version>`
   Releases may contain only the Manager package, checksum, descriptor, and
   provenance bundle; `ubuntu-*` Releases remain the signed kernel channel.
+- Drive Manager publication from a new `pubspec.yaml` version on `main`. Skip an
+  existing complete Release, refuse incomplete Releases or reused tags, and
+  create the matching tag only after the package, checksum, and descriptor all
+  pass one GitHub OIDC/Sigstore attestation. Never give this workflow the MOK
+  private key or another long-lived signing secret.
 - Do not launch Flutter, builds, screenshots, or visual tests
   for Manager UI work unless the user explicitly asks. The user owns visual
   verification, and no development process should remain running in the
