@@ -202,6 +202,11 @@ class ManagerReleaseTests(unittest.TestCase):
         self.assertNotIn("ubuntu-", triggers)
         self.assertNotIn("schedule:", triggers)
         self.assertIn("flutter-version: 3.44.8", workflow)
+        flutter_action = (
+            "subosito/flutter-action@"
+            "1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0"
+        )
+        self.assertIn(flutter_action, workflow)
         self.assertIn("manager/.metadata", workflow)
         self.assertIn('get("frameworkRevision")', workflow)
         self.assertNotIn("cache: true", workflow)
@@ -223,6 +228,8 @@ class ManagerReleaseTests(unittest.TestCase):
         checks = (REPO_ROOT / ".github" / "workflows" / "checks.yml").read_text(
             encoding="utf-8"
         )
+        self.assertIn(flutter_action, checks)
+        self.assertNotIn("actions/cache@v2", checks)
         self.assertIn("python3 tests/manager-release.py", checks)
         kernel_workflow = (
             REPO_ROOT / ".github" / "workflows" / "build.yml"
