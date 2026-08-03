@@ -30,6 +30,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+      - name: Install Flutter
+        uses: subosito/flutter-action@d8687e6979e8ef66d2b2970e2c92c1d8e801d7bf # v2.4.0
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+          cache: true
+
       - name: Check scripts and units
         run: |
           shellcheck scripts/*.sh tests/*.sh \
@@ -39,9 +46,21 @@ jobs:
             config/systemd/s4lockdown-grub-reboot \
             config/grub/11_s4lockdown_resume
           tests/grub-resume.sh
+          python3 tests/manager-release.py
           tests/release-decision.sh
           tests/release-manifest.sh
           tests/resolve-version.sh
           tests/signing-security.sh
           tests/systemd-units.sh
           tests/update-local.sh
+          python3 tests/manager-helper.py
+          python3 tests/manager-package.py
+          python3 tests/update-download.py
+
+      - name: Check Manager
+        working-directory: manager
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test

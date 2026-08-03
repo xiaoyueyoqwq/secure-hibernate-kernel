@@ -90,6 +90,9 @@ jobs:
           tests/signing-security.sh
           tests/systemd-units.sh
           tests/update-local.sh
+          python3 tests/manager-helper.py
+          python3 tests/manager-package.py
+          python3 tests/update-download.py
 
       - name: Restore compiler cache
         if: steps.marker.outputs.build == 'true'

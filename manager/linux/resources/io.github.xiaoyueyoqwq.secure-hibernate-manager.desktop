@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Secure Hibernate
+Comment=Manage the secure hibernation kernel
+Exec=secure-hibernate-manager
+Icon=io.github.xiaoyueyoqwq.secure-hibernate-manager
+Terminal=false
+Categories=System;
+StartupNotify=true
+StartupWMClass=io.github.xiaoyueyoqwq.secure-hibernate-manager

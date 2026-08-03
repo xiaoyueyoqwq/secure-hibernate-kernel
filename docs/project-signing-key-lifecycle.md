@@ -108,8 +108,26 @@ platform-level immutability guarantee. Local clients pin the repository copy of
 Release asset without the project private key fails verification. An incomplete
 draft may be deleted and rebuilt because it has never been published; every
 published revision requires a new, distinct tag. The legacy
-`ubuntu-7.0.0-28.28` Release predates the signed Manifest and is retained only
-for explicit manual installation.
+`ubuntu-7.0.0-28.28` Release predates the signed Manifest and remains unchanged.
+Independent-MOK users retain its explicit manual path. The project-signed local
+controller accepts it for first installation only through an embedded snapshot
+of the canonical repository, exact Git commit, complete asset set, sizes, and
+SHA-256 values; it repeats those checks after copying the files across the root
+trust boundary. No later Manifest-less tag is accepted.
+
+Manager Releases use a separate trust and version domain. The
+`manager-release.yml` workflow accepts only an exact `manager-v<pubspec
+version>` tag whose commit is reachable from the default branch. Its build and
+attestation jobs have read-only repository access; the publish job receives
+`contents: write` only after approval in a separate `manager-release`
+Environment. Configure that Environment to allow only `manager-v*` tags and
+require a maintainer approval.
+
+The Manager package does not use or receive `PROJECT_MOK_PRIVATE_KEY_B64`.
+GitHub's OIDC-backed build provenance authenticates the exact `.deb`, workflow,
+source tag, and commit. The Release also carries a canonical checksum and fixed
+Manager descriptor. Never add Manager assets to an `ubuntu-*` kernel Release or
+kernel assets to a `manager-v*` Release.
 
 ## Planned rotation
 

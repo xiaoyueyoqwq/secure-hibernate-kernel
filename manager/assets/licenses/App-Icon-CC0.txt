@@ -1,0 +1,15 @@
+Application icon source: AMP icon from gilbarbara/logos
+Upstream asset: https://github.com/gilbarbara/logos/blob/main/logos/amp.svg
+Upstream Git object: ba3aa5e2f0890a10436cb2bd1f1d9b24bc2b227c
+SVG Repo index: https://www.svgrepo.com/svg/353393/amp-icon
+
+The project application icon is a recolored, square rendering of the first
+symbol in that upstream asset. The gilbarbara/logos repository is released
+under CC0 1.0 Universal:
+https://github.com/gilbarbara/logos/blob/main/LICENSE.txt
+https://creativecommons.org/publicdomain/zero/1.0/
+
+CC0 does not waive or license trademark rights. AMP and its logo may be
+trademarks of their respective owners. Secure Hibernate Manager is an
+independent project and is not affiliated with or endorsed by the AMP project
+or Google.

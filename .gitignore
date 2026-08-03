@@ -3,10 +3,8 @@ dist/
 work/
 .ccache/
 .codex/
-node_modules/
-manager/out/
-manager/release/
-manager/.vite/
+__pycache__/
+*.py[cod]
 *.deb
 *.der
 *.key

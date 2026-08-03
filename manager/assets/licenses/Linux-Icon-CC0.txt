@@ -1,0 +1,5 @@
+Linux icon source: Simple Icons
+https://simpleicons.org/?q=linux
+
+Simple Icons is released under CC0 1.0 Universal.
+https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md

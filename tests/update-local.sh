@@ -37,7 +37,11 @@ if [[ ${1:-} == --check-only ]]; then
 	printf 'check %s\n' "$2" >> "$S4LOCKDOWN_TEST_PACKAGE_LOG"
 	exit 0
 fi
-printf 'install %s\n' "$1" >> "$S4LOCKDOWN_TEST_PACKAGE_LOG"
+if [[ ${1:-} != --install-only ]]; then
+	printf 'Updater did not request the verified install-only path.\n' >&2
+	exit 2
+fi
+printf 'install %s\n' "$2" >> "$S4LOCKDOWN_TEST_PACKAGE_LOG"
 if [[ ${S4LOCKDOWN_TEST_INSTALL_FAIL:-0} == 1 ]]; then
 	exit 42
 fi
@@ -160,6 +164,11 @@ run_update check --source-version 7.0.0-29.29 --source-dir "$release_29" \
 [[ ! -e $test_root/var/cache/s4lockdown-update/.incoming.interrupted ]]
 [[ ! -e $test_root/var/cache/s4lockdown-update/.staged.retired.123 ]]
 
+run_update check --source-version 7.0.0-29.29 --source-dir "$release_29" \
+	--installed-source-version 7.0.0-28.28 >/dev/null
+[[ $(json_value "$test_root/var/cache/s4lockdown-update/check-state.json" status) == already-staged ]]
+[[ -d $test_root/var/cache/s4lockdown-update/staged ]]
+
 staged_manifest="$test_root/var/cache/s4lockdown-update/staged/release-manifest.json"
 manifest_hash=$(sha256sum "$staged_manifest" | awk '{ print $1 }')
 exec 8<> "$staged_manifest"
@@ -182,6 +191,8 @@ fi
 printf 'POLICY=automatic-install\n' > "$test_root/etc/s4lockdown-update.conf"
 run_update install >/dev/null
 [[ $(json_value "$state_file" last_check_status) == installed-reboot-required ]]
+[[ $(json_value "$state_file" install_phase) == complete ]]
+[[ $(json_value "$state_file" install_progress) == 100 ]]
 [[ $(json_value "$state_file" installed_source_version) == 7.0.0-29.29 ]]
 [[ -f $test_root/run/reboot-required ]]
 grep -Fxq linux-image-7.0.13-ubuntu29-s4lockdown \
@@ -245,6 +256,8 @@ if (( install_status == 0 )); then
 	exit 1
 fi
 [[ $(json_value "$state_file" last_check_status) == install-failed ]]
+[[ $(json_value "$state_file" install_phase) == failed ]]
+[[ $(json_value "$state_file" install_progress) == 78 ]]
 [[ $(json_value "$state_file" installed_source_version) == 7.0.0-29.29 ]]
 [[ -d $test_root/var/lib/s4lockdown-update/available ]]
 
@@ -252,6 +265,25 @@ printf 'POLICY=manual\n' > "$test_root/etc/s4lockdown-update.conf"
 run_update check --source-version 7.0.0-30.30 --source-dir "$release_30" \
 	--installed-source-version 7.0.0-29.29 >/dev/null
 [[ $(json_value "$test_root/var/cache/s4lockdown-update/check-state.json" status) == manual ]]
+
+empty_install_root="$temp_dir/empty-install-root"
+mkdir -p "$empty_install_root/etc"
+printf 'POLICY=automatic-install\n' > "$empty_install_root/etc/s4lockdown-update.conf"
+set +e
+S4LOCKDOWN_TEST_ROOT="$empty_install_root" \
+	PATH="$mock_bin:$PATH" \
+	S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES=1 \
+	S4LOCKDOWN_TEST_APT_VERSION=7.0.0-30.30 \
+	S4LOCKDOWN_TEST_PACKAGE_TOOL="$package_tool" \
+	S4LOCKDOWN_TEST_PACKAGE_LOG="$temp_dir/package.log" \
+	"$mock_repo/scripts/update-local.py" install --force >/dev/null 2>&1
+empty_install_status=$?
+set -e
+if (( empty_install_status == 0 )); then
+	printf 'Updater accepted an installation without a verified Release.\n' >&2
+	exit 1
+fi
+[[ $(json_value "$empty_install_root/var/lib/s4lockdown-update/state.json" install_phase) == failed ]]
 
 state_failure_root="$temp_dir/state-failure-root"
 mkdir -p "$state_failure_root/etc"

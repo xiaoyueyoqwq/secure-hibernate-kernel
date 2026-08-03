@@ -57,8 +57,11 @@ fi
 temp_file=$(mktemp)
 trap 'rm -f -- "$temp_file"' EXIT
 {
-	printf '# Boot the top-level Ubuntu entry; preserve the user-configured menu behavior.\n'
+	printf '# Boot the top-level Ubuntu entry and keep the normal path menu-free.\n'
 	printf 'GRUB_DEFAULT="%s"\n' "$simple_id"
+	printf 'GRUB_TIMEOUT_STYLE=hidden\n'
+	printf 'GRUB_TIMEOUT=0\n'
+	printf 'GRUB_RECORDFAIL_TIMEOUT=0\n'
 } > "$temp_file"
 
 install -o root -g root -m 0644 "$temp_file" /etc/default/grub.d/99-s4lockdown.cfg

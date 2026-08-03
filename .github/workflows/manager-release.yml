@@ -1,0 +1,281 @@
+name: Build and release Secure Hibernate Manager
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "manager-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manager-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      deb_name: ${{ steps.metadata.outputs.deb_name }}
+      bundle_name: ${{ steps.metadata.outputs.bundle_name }}
+      candidate_artifact: ${{ steps.metadata.outputs.candidate_artifact }}
+      release_artifact: ${{ steps.metadata.outputs.release_artifact }}
+      publish: ${{ steps.metadata.outputs.publish }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate Manager version and event
+        id: metadata
+        run: |
+          scripts/manager-release.py metadata \
+            --pubspec manager/pubspec.yaml \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --ref-type "$GITHUB_REF_TYPE" \
+            --ref-name "$GITHUB_REF_NAME" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Require tagged source to be on the default branch
+        if: steps.metadata.outputs.publish == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test -n "$DEFAULT_BRANCH"
+          git merge-base --is-ancestor \
+            "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake dpkg-dev libgtk-3-dev liblzma-dev ninja-build pkg-config
+
+      - name: Install pinned Flutter SDK
+        uses: subosito/flutter-action@d8687e6979e8ef66d2b2970e2c92c1d8e801d7bf # v2.4.0
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+
+      - name: Verify pinned Flutter revision
+        run: |
+          flutter --version --machine > "$RUNNER_TEMP/flutter-version.json"
+          python3 - manager/.metadata "$RUNNER_TEMP/flutter-version.json" <<'PY'
+          import json
+          import re
+          import sys
+
+          expected = None
+          for line in open(sys.argv[1], encoding="utf-8"):
+              match = re.fullmatch(r'  revision: "([0-9a-f]{40})"\n?', line)
+              if match:
+                  expected = match.group(1)
+                  break
+          if expected is None:
+              raise SystemExit("manager/.metadata has no pinned Flutter revision")
+          with open(sys.argv[2], encoding="utf-8") as stream:
+              actual = json.load(stream).get("frameworkRevision")
+          if actual != expected:
+              raise SystemExit(f"Flutter revision mismatch: expected {expected}, received {actual}")
+          PY
+
+      - name: Check and build Manager
+        working-directory: manager
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+          OUTPUT_DIR="$GITHUB_WORKSPACE/release" scripts/build-deb.sh
+
+      - name: Assemble Manager candidate
+        run: |
+          python3 tests/manager-package.py
+          scripts/manager-release.py prepare release \
+            --pubspec manager/pubspec.yaml \
+            --git-commit "$GITHUB_SHA"
+          scripts/manager-release.py verify release \
+            --pubspec manager/pubspec.yaml \
+            --expected-release-tag "${{ steps.metadata.outputs.release_tag }}" \
+            --expected-git-commit "$GITHUB_SHA"
+          (cd release && sha256sum --check SHA256SUMS)
+
+      - name: Upload Manager candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.metadata.outputs.candidate_artifact }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  attest:
+    needs: build
+    if: github.event_name == 'push' && needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Download Manager candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build.outputs.candidate_artifact }}
+          path: release
+
+      - name: Reverify Manager candidate
+        run: |
+          scripts/manager-release.py verify release \
+            --pubspec manager/pubspec.yaml \
+            --expected-release-tag "${{ needs.build.outputs.release_tag }}" \
+            --expected-git-commit "$GITHUB_SHA"
+          (cd release && sha256sum --check SHA256SUMS)
+
+      - name: Sign Manager build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: release/${{ needs.build.outputs.deb_name }}
+
+      - name: Preserve and verify signed provenance
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+          BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
+          DEB_NAME: ${{ needs.build.outputs.deb_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          install -m 0644 -- "$BUNDLE_PATH" "release/$BUNDLE_NAME"
+          scripts/manager-release.py verify release \
+            --pubspec manager/pubspec.yaml \
+            --expected-release-tag "${{ needs.build.outputs.release_tag }}" \
+            --expected-git-commit "$GITHUB_SHA" \
+            --require-attestation
+          gh attestation verify "release/$DEB_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --bundle "release/$BUNDLE_NAME" \
+            --signer-workflow \
+              "github.com/$GITHUB_REPOSITORY/.github/workflows/manager-release.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+
+      - name: Upload attested Manager release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ needs.build.outputs.release_artifact }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [build, attest]
+    if: github.event_name == 'push' && needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: manager-release
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Download attested Manager release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build.outputs.release_artifact }}
+          path: release
+
+      - name: Verify release package and provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          DEB_NAME: ${{ needs.build.outputs.deb_name }}
+          BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
+        run: |
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          scripts/manager-release.py verify release \
+            --pubspec manager/pubspec.yaml \
+            --expected-release-tag "$RELEASE_TAG" \
+            --expected-git-commit "$GITHUB_SHA" \
+            --require-attestation
+          (cd release && sha256sum --check SHA256SUMS)
+          gh attestation verify "release/$DEB_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --bundle "release/$BUNDLE_NAME" \
+            --signer-workflow \
+              "github.com/$GITHUB_REPOSITORY/.github/workflows/manager-release.yml" \
+            --source-ref "$GITHUB_REF" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Refusing to modify existing Manager Release $RELEASE_TAG." >&2
+            exit 1
+          fi
+
+      - name: Publish Manager-only Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          DEB_NAME: ${{ needs.build.outputs.deb_name }}
+          BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
+        run: |
+          python3 - "$RUNNER_TEMP/release-notes.md" <<'PY'
+          import os
+          import sys
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["RELEASE_TAG"]
+          package = os.environ["DEB_NAME"]
+          bundle = os.environ["BUNDLE_NAME"]
+          notes = f"""Secure Hibernate Manager {os.environ['VERSION']}.
+
+          This Release contains only the Flutter Manager Debian package. It does
+          not contain or supersede an `ubuntu-*` kernel Release.
+
+          Verify the checksum and GitHub/Sigstore build provenance:
+
+          ```bash
+          sha256sum --check SHA256SUMS
+          gh attestation verify {package} \\
+            --repo {repository} \\
+            --bundle {bundle} \\
+            --signer-workflow github.com/{repository}/.github/workflows/manager-release.yml \\
+            --source-ref refs/tags/{tag} \\
+            --deny-self-hosted-runners
+          ```
+          """
+          with open(sys.argv[1], "w", encoding="utf-8") as stream:
+              stream.write(notes)
+          PY
+          gh release create "$RELEASE_TAG" \
+            "release/$DEB_NAME" \
+            release/SHA256SUMS \
+            release/manager-release.json \
+            "release/$BUNDLE_NAME" \
+            --draft \
+            --latest=false \
+            --title "Secure Hibernate Manager $VERSION" \
+            --verify-tag \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false

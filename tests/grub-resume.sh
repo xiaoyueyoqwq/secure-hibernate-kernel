@@ -64,4 +64,7 @@ fi
 
 # shellcheck disable=SC2016
 grep -Fq 'grub-reboot "$entry_id"' "$helper"
+grep -Fq 'GRUB_TIMEOUT_STYLE=hidden' "$repo_root/scripts/set-default-kernel.sh"
+grep -Fq 'GRUB_TIMEOUT=0' "$repo_root/scripts/set-default-kernel.sh"
+grep -Fq 'GRUB_RECORDFAIL_TIMEOUT=0' "$repo_root/scripts/set-default-kernel.sh"
 printf 'GRUB resume-entry tests passed\n'

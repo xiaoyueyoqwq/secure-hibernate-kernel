@@ -18,9 +18,10 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 install_root=/usr/local/lib/s4lockdown-update
 update_user=s4lockdown-update
 
-for command in apt-cache awk dpkg dpkg-deb dpkg-query find flock fuser getent \
-	install modinfo nproc openssl perl python3 sbverify systemctl systemd-analyze \
-	useradd wall xz zstd; do
+for command in apt-cache awk cmp cryptsetup dpkg dpkg-deb dpkg-query dracut find \
+	findmnt flock fuser getent grep install lsblk modinfo mokutil nproc openssl \
+	perl python3 sbverify systemctl systemd-analyze systemd-ask-password \
+	systemd-cryptenroll tpm2 update-grub useradd wall xz zstd; do
 	command -v "$command" >/dev/null || {
 		printf 'Required command not found: %s\n' "$command" >&2
 		exit 1
@@ -49,7 +50,11 @@ else
 fi
 
 for directory in /var/cache/s4lockdown-update /var/lib/s4lockdown-update \
-	"$install_root" "$install_root/scripts" "$install_root/certs"; do
+	"$install_root" "$install_root/scripts" "$install_root/certs" \
+	"$install_root/config" "$install_root/config/dracut" \
+	"$install_root/config/grub" "$install_root/config/logind" \
+	"$install_root/config/polkit" "$install_root/config/systemd" \
+	"$install_root/config/systemd/systemd-hibernate.service.d"; do
 	if [[ -L $directory ]]; then
 		printf 'Refusing a symbolic-link installation directory: %s\n' \
 			"$directory" >&2
@@ -57,9 +62,37 @@ for directory in /var/cache/s4lockdown-update /var/lib/s4lockdown-update \
 	fi
 done
 
-install -d -o "$update_user" -g "$update_user" -m 0750 \
+timer_was_active=false
+if systemctl is-active --quiet s4lockdown-update.timer; then
+	timer_was_active=true
+fi
+installation_complete=false
+restore_timer_on_failure() {
+	if [[ $installation_complete != true && $timer_was_active == true ]]; then
+		systemctl start s4lockdown-update.timer >/dev/null 2>&1 || true
+	fi
+}
+trap restore_timer_on_failure EXIT
+
+systemctl stop s4lockdown-update.timer >/dev/null 2>&1 || true
+if systemctl is-active --quiet s4lockdown-update.timer; then
+	printf 'Could not stop the updater timer before installation.\n' >&2
+	exit 1
+fi
+for unit in s4lockdown-update-check.service \
+	s4lockdown-update-manager-check.service s4lockdown-update.service; do
+	if systemctl is-active --quiet "$unit"; then
+		printf 'Updater operation is active; retry after it finishes: %s\n' "$unit" >&2
+		exit 1
+	fi
+done
+
+install -d -o root -g root -m 0755 /var/lib/s4lockdown-update
+
+# Desktop users may read check-state.json; staged assets are separate mode-0700 trees.
+install -d -o "$update_user" -g "$update_user" -m 0755 \
 	/var/cache/s4lockdown-update
-lock_file=/var/cache/s4lockdown-update/update.lock
+lock_file=/var/lib/s4lockdown-update/update.lock
 if [[ -L $lock_file || ( -e $lock_file && ! -f $lock_file ) ]]; then
 	printf 'Refusing a non-regular updater lock file: %s\n' "$lock_file" >&2
 	exit 1
@@ -73,9 +106,14 @@ chown "$update_user:$update_user" "$lock_file"
 chmod 0600 "$lock_file"
 
 install -d -o root -g root -m 0755 \
-	"$install_root" "$install_root/scripts" "$install_root/certs"
+	"$install_root" "$install_root/scripts" "$install_root/certs" \
+	"$install_root/config" "$install_root/config/dracut" \
+	"$install_root/config/grub" "$install_root/config/logind" \
+	"$install_root/config/polkit" "$install_root/config/systemd" \
+	"$install_root/config/systemd/systemd-hibernate.service.d"
 for script in extract-module-signature.pl install-signed-packages.sh \
-	release-manifest.py resolve-version.sh set-default-kernel.sh \
+	install-system-config.sh manager-helper.py release-manifest.py \
+	resolve-version.sh set-default-kernel.sh \
 	update-local.py update-local.sh verify-module-signatures.sh; do
 	install -o root -g root -m 0755 "$repo_root/scripts/$script" \
 		"$install_root/scripts/$script"
@@ -83,9 +121,35 @@ done
 install -o root -g root -m 0644 \
 	"$repo_root/certs/secure-hibernate-project.pem" \
 	"$install_root/certs/secure-hibernate-project.pem"
+install -o root -g root -m 0644 \
+	"$repo_root/certs/secure-hibernate-project.der" \
+	"$install_root/certs/secure-hibernate-project.der"
+
+install -o root -g root -m 0644 \
+	"$repo_root/config/dracut/90-s4lockdown-resume.conf" \
+	"$install_root/config/dracut/90-s4lockdown-resume.conf"
+install -o root -g root -m 0755 \
+	"$repo_root/config/grub/11_s4lockdown_resume" \
+	"$install_root/config/grub/11_s4lockdown_resume"
+install -o root -g root -m 0644 \
+	"$repo_root/config/logind/90-s4lockdown-lid.conf" \
+	"$install_root/config/logind/90-s4lockdown-lid.conf"
+install -o root -g root -m 0644 \
+	"$repo_root/config/polkit/10-enable-local-hibernate.rules" \
+	"$install_root/config/polkit/10-enable-local-hibernate.rules"
+install -o root -g root -m 0755 \
+	"$repo_root/config/systemd/s4lockdown-grub-reboot" \
+	"$install_root/config/systemd/s4lockdown-grub-reboot"
+install -o root -g root -m 0644 \
+	"$repo_root/config/systemd/s4lockdown-grub-reboot.service" \
+	"$install_root/config/systemd/s4lockdown-grub-reboot.service"
+install -o root -g root -m 0644 \
+	"$repo_root/config/systemd/systemd-hibernate.service.d/10-s4lockdown-grub-reboot.conf" \
+	"$install_root/config/systemd/systemd-hibernate.service.d/10-s4lockdown-grub-reboot.conf"
 
 install -d -o root -g root -m 0755 /etc/systemd/system
-for unit in s4lockdown-update-check.service s4lockdown-update.service \
+for unit in s4lockdown-update-check.service \
+	s4lockdown-update-manager-check.service s4lockdown-update.service \
 	s4lockdown-update.timer; do
 	install -o root -g root -m 0644 "$repo_root/config/systemd/$unit" \
 		"/etc/systemd/system/$unit"
@@ -95,19 +159,36 @@ if [[ ! -e /etc/s4lockdown-update.conf ]]; then
 		/etc/s4lockdown-update.conf
 fi
 
-install -d -o root -g root -m 0755 /var/lib/s4lockdown-update
-
-/usr/bin/python3 -m py_compile "$install_root/scripts/release-manifest.py" \
+/usr/bin/python3 -m py_compile "$install_root/scripts/manager-helper.py" \
+	"$install_root/scripts/release-manifest.py" \
 	"$install_root/scripts/update-local.py"
 bash -n "$install_root/scripts/"*.sh
 "$install_root/scripts/update-local.sh" status >/dev/null
 systemd-analyze verify \
 	/etc/systemd/system/s4lockdown-update-check.service \
+	/etc/systemd/system/s4lockdown-update-manager-check.service \
 	/etc/systemd/system/s4lockdown-update.service \
 	/etc/systemd/system/s4lockdown-update.timer
 systemctl daemon-reload
-systemctl enable --now s4lockdown-update.timer
 
-printf 'Installed updater with policy: %s\n' \
-	"$(sed -n 's/^POLICY=//p' /etc/s4lockdown-update.conf)"
-printf 'The timer checks daily and never restarts the system automatically.\n'
+installed_policy=$(sed -n 's/^POLICY=//p' /etc/s4lockdown-update.conf)
+case $installed_policy in
+	manual)
+		systemctl disable --now s4lockdown-update.timer
+		;;
+	check-and-notify | automatic-install)
+		systemctl enable --now s4lockdown-update.timer
+		;;
+	*)
+		printf 'Unsupported updater policy: %s\n' "$installed_policy" >&2
+		exit 1
+		;;
+esac
+installation_complete=true
+
+printf 'Installed updater with policy: %s\n' "$installed_policy"
+if [[ $installed_policy == manual ]]; then
+	printf 'The daily timer is disabled by the manual policy.\n'
+else
+	printf 'The timer checks daily and never restarts the system automatically.\n'
+fi

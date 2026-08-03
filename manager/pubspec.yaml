@@ -1,0 +1,53 @@
+name: secure_hibernate_manager
+description: Desktop manager for the Secure Hibernate project kernel.
+publish_to: "none"
+version: 1.0.0+25
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  file_selector: ^1.0.3
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  lucide_icons_flutter: ^3.1.15
+  shared_preferences: ^2.5.5
+  simple_icons: ^16.23.0
+  window_manager: ^0.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/i18n/
+    - assets/fonts/UFL.txt
+    - linux/resources/app-icon.png
+  fonts:
+    - family: Ubuntu
+      fonts:
+        - asset: assets/fonts/Ubuntu-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Ubuntu-LightItalic.ttf
+          weight: 300
+          style: italic
+        - asset: assets/fonts/Ubuntu-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Ubuntu-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: assets/fonts/Ubuntu-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Ubuntu-MediumItalic.ttf
+          weight: 500
+          style: italic
+        - asset: assets/fonts/Ubuntu-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Ubuntu-BoldItalic.ttf
+          weight: 700
+          style: italic
