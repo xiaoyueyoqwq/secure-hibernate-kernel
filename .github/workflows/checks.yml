@@ -37,6 +37,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Trust the mounted Flutter SDK checkout
+        run: git config --global --add safe.directory "$FLUTTER_ROOT"
+
       - name: Check scripts and units
         run: |
           shellcheck scripts/*.sh tests/*.sh \

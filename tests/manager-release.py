@@ -232,6 +232,8 @@ class ManagerReleaseTests(unittest.TestCase):
         self.assertNotIn("actions/cache@v2", checks)
         self.assertIn("ca-certificates curl dpkg-dev", checks)
         self.assertIn("gawk git grep jq kmod", checks)
+        self.assertIn('safe.directory "$FLUTTER_ROOT"', checks)
+        self.assertNotIn("safe.directory '*'", checks)
         self.assertIn("python3 tests/manager-release.py", checks)
         kernel_workflow = (
             REPO_ROOT / ".github" / "workflows" / "build.yml"
