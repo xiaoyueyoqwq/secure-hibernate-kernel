@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:secure_hibernate_manager/src/app_state.dart';
+import 'package:secure_hibernate_manager/src/backend.dart';
 import 'package:secure_hibernate_manager/main.dart';
 import 'package:secure_hibernate_manager/src/pages/installation_wizard.dart';
 import 'package:secure_hibernate_manager/src/translations.dart';
@@ -301,6 +302,51 @@ class _LegacyMokPasswordBackend extends _CancelledManagerBackend {
   }
 }
 
+class _RecordingTpmBackend extends _CancelledManagerBackend {
+  _RecordingTpmBackend({this.configured = true, this.cancelled = false});
+
+  final bool configured;
+  final bool cancelled;
+  final List<ManagerActionRequest> requests = [];
+
+  @override
+  Future<ProjectMokInspection> inspectProjectMok() async =>
+      const ProjectMokInspection(
+        status: ProjectMokStatus.enrolled,
+        fingerprintSha256:
+            '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
+            'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+        error: null,
+        oneTimePassword: null,
+      );
+
+  @override
+  Future<ManagerActionResult> runManagerAction(
+    ManagerActionRequest request,
+  ) async {
+    requests.add(request);
+    if (cancelled) {
+      return ManagerActionResult(
+        action: request.action,
+        status: ManagerActionStatus.cancelled,
+        error: null,
+        data: const ManagerActionData(),
+      );
+    }
+    return ManagerActionResult(
+      action: request.action,
+      status: ManagerActionStatus.success,
+      error: null,
+      data: ManagerActionData(
+        alreadyConfigured: configured,
+        tokens: configured
+            ? const [ManagerTokenResult(tokenId: '0', passed: true)]
+            : const [],
+      ),
+    );
+  }
+}
+
 Future<void> pumpManager(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump();
@@ -315,7 +361,7 @@ Future<void> pumpManager(WidgetTester tester) async {
 Future<void> completeMockSetup(WidgetTester tester) async {
   await tester.tap(find.text('TPM'));
   await tester.pump(const Duration(milliseconds: 800));
-  await tester.tap(find.text('Configure TPM'));
+  await tester.tap(find.text('Check TPM'));
   await tester.pump(const Duration(milliseconds: 1300));
   await tester.pump();
   await tester.tap(find.text('Finish'));
@@ -371,6 +417,81 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues(const {});
+  });
+
+  testWidgets('TPM check is explicit and does not request a LUKS password',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _RecordingTpmBackend();
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(translations: translations, backend: backend),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TPM'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check TPM'), findsOneWidget);
+    expect(backend.requests, isEmpty);
+    expect(find.byKey(const ValueKey('luks-password-dialog')), findsNothing);
+
+    await tester.tap(find.text('Check TPM'));
+    await tester.pumpAndSettle();
+
+    expect(backend.requests, hasLength(1));
+    expect(backend.requests.single.action, ManagerActionType.verifyTpm);
+    expect(backend.requests.single.recoveryPassword, isNull);
+    expect(find.byKey(const ValueKey('luks-password-dialog')), findsNothing);
+    expect(find.text('Configured'), findsOneWidget);
+    expect(find.text('Verify Recovery'), findsOneWidget);
+  });
+
+  testWidgets('missing TPM token requires a separate configuration click',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _RecordingTpmBackend(configured: false);
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(translations: translations, backend: backend),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TPM'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check TPM'));
+    await tester.pumpAndSettle();
+
+    expect(backend.requests.single.action, ManagerActionType.verifyTpm);
+    expect(find.text('Needs configuration'), findsOneWidget);
+    expect(find.text('Configure TPM'), findsOneWidget);
+    expect(find.byKey(const ValueKey('luks-password-dialog')), findsNothing);
+
+    await tester.tap(find.text('Configure TPM'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('luks-password-dialog')), findsOneWidget);
+    expect(backend.requests, hasLength(1));
+  });
+
+  testWidgets('cancelled TPM inspection remains retryable', (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _RecordingTpmBackend(cancelled: true);
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(translations: translations, backend: backend),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TPM'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check TPM'));
+    await tester.pumpAndSettle();
+
+    expect(backend.requests.single.action, ManagerActionType.verifyTpm);
+    expect(backend.requests.single.recoveryPassword, isNull);
+    expect(find.text('Check TPM'), findsOneWidget);
+    expect(find.text('Configure TPM'), findsNothing);
+    expect(find.byKey(const ValueKey('luks-password-dialog')), findsNothing);
   });
 
   testWidgets('first run shows the seven-step installation wizard',

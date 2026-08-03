@@ -310,6 +310,10 @@
   fixed Polkit-authorized Helper mode, never argv/environment/logs/files, and
   clear both caller and Helper buffers in `finally`. Cancellation must start no
   privileged action, and every exit path must clear the visible busy state.
+- Keep TPM inspection and TPM enrollment as separate explicit Manager actions.
+  Entering the wizard step must not open Polkit automatically; `verify-tpm`
+  must never request or receive a LUKS password, and only a confirmed missing or
+  unusable token may change the next action to password-backed TPM enrollment.
 - Any Manager change to `/etc/crypttab` must rebuild the encrypted-root
   initramfs with the fixed crypt/dm/systemd-cryptsetup modules and exact root
   and LUKS UUIDs, verify the candidate with `lsinitrd`, and atomically replace

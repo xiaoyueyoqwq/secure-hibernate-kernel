@@ -732,6 +732,34 @@ class ManagerHelperTests(unittest.TestCase):
             ], timeout=120, check=False),
         ])
 
+    def test_tpm_inspection_reports_missing_token_without_error(self) -> None:
+        device = Path("/dev/mock-root")
+        with patch.multiple(
+            helper,
+            root_luks_entry=Mock(return_value=("cryptroot", device)),
+            luks_uuid=Mock(return_value="11111111-2222-3333-4444-555555555555"),
+            inspect_tpm_tokens=Mock(return_value=[]),
+        ):
+            result = helper.action_verify_tpm()
+        self.assertFalse(result["alreadyConfigured"])
+        self.assertEqual(result["tokens"], [])
+
+    def test_tpm_inspection_reports_unusable_and_working_tokens(self) -> None:
+        device = Path("/dev/mock-root")
+        tokens = [
+            {"tokenId": "0", "passed": False},
+            {"tokenId": "2", "passed": True},
+        ]
+        with patch.multiple(
+            helper,
+            root_luks_entry=Mock(return_value=("cryptroot", device)),
+            luks_uuid=Mock(return_value="11111111-2222-3333-4444-555555555555"),
+            inspect_tpm_tokens=Mock(return_value=tokens),
+        ):
+            result = helper.action_verify_tpm()
+        self.assertTrue(result["alreadyConfigured"])
+        self.assertEqual(result["tokens"], tokens)
+
     def test_crypttab_update_changes_only_root_entry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             crypttab = Path(directory) / "crypttab"

@@ -1043,7 +1043,12 @@ def require_project_boot() -> str:
 
 def action_verify_tpm() -> dict[str, Any]:
     _mapper, device = root_luks_entry()
-    return {"deviceUuid": luks_uuid(device), **verify_tpm_tokens(device)}
+    results = inspect_tpm_tokens(device)
+    return {
+        "deviceUuid": luks_uuid(device),
+        "alreadyConfigured": any(result["passed"] for result in results),
+        "tokens": results,
+    }
 
 
 def action_verify_recovery(password: bytes | bytearray | None = None) -> dict[str, Any]:

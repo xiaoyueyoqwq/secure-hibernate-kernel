@@ -555,6 +555,7 @@ void main() {
         _helperResponse(
           verifyTpm.action,
           data: const {
+            'alreadyConfigured': true,
             'tokens': [
               {'tokenId': '0', 'passed': true},
             ],
@@ -563,20 +564,41 @@ void main() {
       );
       expect(verified.data.tokens.single.passed, isTrue);
 
-      expect(
-        () => parseManagerActionResponse(
-          verifyTpm,
-          _helperResponse(
-            verifyTpm.action,
-            data: const {
-              'tokens': [
-                {'tokenId': '0', 'passed': false},
-              ],
-            },
-          ),
+      final needsConfiguration = parseManagerActionResponse(
+        verifyTpm,
+        _helperResponse(
+          verifyTpm.action,
+          data: const {
+            'alreadyConfigured': false,
+            'tokens': [
+              {'tokenId': '0', 'passed': false},
+            ],
+          },
         ),
-        throwsFormatException,
       );
+      expect(needsConfiguration.data.alreadyConfigured, isFalse);
+
+      for (final data in <Map<String, Object?>>[
+        const {},
+        const {
+          'alreadyConfigured': true,
+          'tokens': [],
+        },
+        const {
+          'alreadyConfigured': false,
+          'tokens': [
+            {'tokenId': '0', 'passed': true},
+          ],
+        },
+      ]) {
+        expect(
+          () => parseManagerActionResponse(
+            verifyTpm,
+            _helperResponse(verifyTpm.action, data: data),
+          ),
+          throwsFormatException,
+        );
+      }
 
       const enrollTpm = ManagerActionRequest(ManagerActionType.enrollTpm);
       expect(

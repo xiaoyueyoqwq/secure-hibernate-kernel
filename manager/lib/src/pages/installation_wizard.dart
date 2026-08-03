@@ -121,6 +121,8 @@ bool installProgressTargetsSystemConfiguration(InstallPhase phase) =>
 bool installFailureTargetsSystemConfiguration(InstallProgress progress) =>
     progress.phase == InstallPhase.failed && progress.progress >= 90;
 
+enum TpmInspection { unchecked, configured, needsConfiguration }
+
 class InstallationWizardPage extends StatefulWidget {
   const InstallationWizardPage({super.key});
 
@@ -145,7 +147,7 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
   bool packagesInstalled = false;
   InstallationInspection installationInspection = InstallationInspection.idle;
   bool bootVerified = false;
-  bool tpmVerified = false;
+  TpmInspection tpmInspection = TpmInspection.unchecked;
   bool recoveryVerified = false;
   bool restartConfirmation = false;
   bool nativeSnapshotInitialized = false;
@@ -870,7 +872,29 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
             return;
           }
           if (!installationComplete) {
-            final action = manager.configureTpm
+            if (manager.configureTpm &&
+                tpmInspection == TpmInspection.unchecked) {
+              setState(() => processing = true);
+              try {
+                final result = await manager.runManagerAction(
+                  const ManagerActionRequest(ManagerActionType.verifyTpm),
+                );
+                if (result.status == ManagerActionStatus.success && mounted) {
+                  setState(() {
+                    tpmInspection = result.data.alreadyConfigured == true
+                        ? TpmInspection.configured
+                        : TpmInspection.needsConfiguration;
+                  });
+                }
+              } on Object catch (error) {
+                publishWizardError(error);
+              } finally {
+                if (mounted) setState(() => processing = false);
+              }
+              return;
+            }
+            final action = manager.configureTpm &&
+                    tpmInspection == TpmInspection.needsConfiguration
                 ? ManagerActionType.enrollTpm
                 : ManagerActionType.verifyRecovery;
             final recoveryPassword =
@@ -889,11 +913,13 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
                 ),
               );
               if (result.status == ManagerActionStatus.success) {
-                tpmVerified = manager.configureTpm &&
-                    result.data.tokens.any((token) => token.passed);
+                if (action == ManagerActionType.enrollTpm) {
+                  tpmInspection = TpmInspection.configured;
+                }
                 recoveryVerified = result.data.passwordRecovery == 'verified';
-                installationComplete =
-                    recoveryVerified && (!manager.configureTpm || tpmVerified);
+                installationComplete = recoveryVerified &&
+                    (!manager.configureTpm ||
+                        tpmInspection == TpmInspection.configured);
                 await manager.refreshSnapshot();
               }
             } on Object catch (error) {
@@ -904,7 +930,9 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
             }
             return;
           }
-          if (!recoveryVerified || (manager.configureTpm && !tpmVerified)) {
+          if (!recoveryVerified ||
+              (manager.configureTpm &&
+                  tpmInspection != TpmInspection.configured)) {
             return;
           }
           try {
@@ -916,7 +944,9 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
         }
         if (!installationComplete) {
           await process(const Duration(milliseconds: 1200), () {
-            tpmVerified = manager.configureTpm;
+            tpmInspection = manager.configureTpm
+                ? TpmInspection.configured
+                : TpmInspection.unchecked;
             recoveryVerified = true;
             manager.tpmConfigured = manager.configureTpm;
             installationComplete = true;
@@ -1006,7 +1036,13 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
           : !manager.luks
               ? t.text('common.finish')
               : manager.configureTpm
-                  ? t.text('common.configureTpm')
+                  ? switch (tpmInspection) {
+                      TpmInspection.unchecked => t.text('common.checkTpm'),
+                      TpmInspection.needsConfiguration =>
+                        t.text('common.configureTpm'),
+                      TpmInspection.configured =>
+                        t.text('common.verifyRecovery'),
+                    }
                   : t.text('common.verifyRecovery'),
       _ => t.text('common.continue'),
     };
@@ -1145,8 +1181,9 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
                 installationInspection: installationInspection,
                 installProgress: installProgress,
                 installActionProgressObserved: installActionProgressObserved,
+                processing: processing,
                 bootVerified: bootVerified,
-                tpmVerified: tpmVerified,
+                tpmInspection: tpmInspection,
                 recoveryVerified: recoveryVerified,
               ),
               if (installationComplete) ...[
@@ -1476,8 +1513,9 @@ class WizardStepDetails extends StatelessWidget {
     required this.installationInspection,
     required this.installProgress,
     required this.installActionProgressObserved,
+    required this.processing,
     required this.bootVerified,
-    required this.tpmVerified,
+    required this.tpmInspection,
     required this.recoveryVerified,
     super.key,
   });
@@ -1488,8 +1526,9 @@ class WizardStepDetails extends StatelessWidget {
   final InstallationInspection installationInspection;
   final InstallProgress installProgress;
   final bool installActionProgressObserved;
+  final bool processing;
   final bool bootVerified;
-  final bool tpmVerified;
+  final TpmInspection tpmInspection;
   final bool recoveryVerified;
 
   List<DetailRow> _installationRows({
@@ -2025,16 +2064,25 @@ class WizardStepDetails extends StatelessWidget {
                 : d('tpmUnavailableWithoutLuks'),
             value: !manager.luks
                 ? d('notApplicable')
-                : manager.configureTpm
-                    ? d('enabled')
-                    : d('disabled'),
+                : !manager.configureTpm
+                    ? d('disabled')
+                    : processing && tpmInspection == TpmInspection.unchecked
+                        ? t.text('common.checkingStatus')
+                        : switch (tpmInspection) {
+                            TpmInspection.unchecked => d('tpmUnchecked'),
+                            TpmInspection.configured => d('configured'),
+                            TpmInspection.needsConfiguration =>
+                              d('tpmNeedsConfiguration'),
+                          },
             status: !manager.luks
                 ? StatusKind.warning
-                : tpmVerified
-                    ? StatusKind.ok
-                    : manager.configureTpm
-                        ? StatusKind.pending
-                        : StatusKind.warning,
+                : !manager.configureTpm
+                    ? StatusKind.warning
+                    : tpmInspection == TpmInspection.configured
+                        ? StatusKind.ok
+                        : tpmInspection == TpmInspection.needsConfiguration
+                            ? StatusKind.warning
+                            : StatusKind.pending,
           ),
           DetailRow(
             label: t.text('security.luksState'),
@@ -2049,14 +2097,14 @@ class WizardStepDetails extends StatelessWidget {
             description: d('crypttabDescription'),
             value: !manager.luks
                 ? d('notApplicable')
-                : tpmVerified
+                : tpmInspection == TpmInspection.configured
                     ? d('tpmVerified')
                     : manager.tpmConfigured
                         ? d('crypttabDetected')
                         : d('crypttabNotDetected'),
             status: !manager.luks
                 ? StatusKind.warning
-                : tpmVerified
+                : tpmInspection == TpmInspection.configured
                     ? StatusKind.ok
                     : manager.tpmConfigured
                         ? StatusKind.warning

@@ -281,7 +281,7 @@ class NativeManagerBackend implements ManagerBackend {
         if (result.action == ManagerActionType.verifyRecovery) {
           _passwordRecoveryVerified = true;
         } else if (result.action == ManagerActionType.verifyTpm) {
-          _tpmUnlockVerified = true;
+          _tpmUnlockVerified = result.data.alreadyConfigured == true;
         } else if (result.action == ManagerActionType.enrollTpm) {
           _passwordRecoveryVerified = true;
           _tpmUnlockVerified = true;
@@ -1481,9 +1481,10 @@ void _requireSuccessData(
         );
       }
     case ManagerActionType.verifyTpm:
-      if (!tokenVerified) {
+      if (data.alreadyConfigured == null ||
+          data.alreadyConfigured != tokenVerified) {
         throw const FormatException(
-          'Helper did not confirm a working TPM token',
+          'Helper returned an inconsistent TPM inspection result',
         );
       }
     case ManagerActionType.verifyRecovery:
