@@ -568,8 +568,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Available Updates'), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('manager-software-update')), findsOneWidget);
+    final softwareEntry = find.byKey(const ValueKey('manager-software-update'));
+    expect(softwareEntry, findsOneWidget);
+    await tester.ensureVisible(softwareEntry);
+    await tester.pump();
     expect(find.text('Manager Software'), findsOneWidget);
     expect(find.text('Independent release channel'), findsOneWidget);
   });
