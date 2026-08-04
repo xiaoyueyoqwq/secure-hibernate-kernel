@@ -1064,19 +1064,19 @@ class _AppButtonState extends State<AppButton> {
                 else if (widget.icon != null)
                   Icon(widget.icon, size: 14, color: foreground),
                 if (widget.label.isNotEmpty)
-                  Flexible(
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        left: widget.busy || widget.icon != null ? 8 : 0,
-                      ),
-                      child: Text(
-                        widget.label,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: foreground,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: widget.busy || widget.icon != null ? 8 : 0,
+                    ),
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: foreground,
+                        fontFamily: 'Ubuntu',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),

@@ -108,122 +108,131 @@ class _KernelsPageState extends State<KernelsPage> {
       ManagerUpdateState.unknown =>
         t.text('kernels.managerUpdateNotCheckedDescription'),
     };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        PageHeader(
-          title: t.text('kernels.title'),
-          description: t.text('kernels.description'),
-        ),
-        const SizedBox(height: 32),
-        SectionTitle(t.text('kernels.runningKernel')),
-        const SizedBox(height: 16),
-        StatusRow(
-          label: t.text('kernels.activeVersion'),
-          value: active.version.isEmpty
-              ? Text(t.text('kernels.notDetected'))
-              : Text(
-                  active.version,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 14,
-                  ),
-                ),
-          status: active.version.isEmpty
-              ? StatusKind.error
-              : active.project
-                  ? StatusKind.ok
-                  : StatusKind.warning,
-          description: active.version.isEmpty
-              ? t.text('kernels.notDetectedDescription')
-              : active.project
-                  ? t.text('kernels.projectActive')
-                  : t.text('kernels.officialActive'),
-        ),
-        const SizedBox(height: 32),
-        SectionTitle(t.text('kernels.installedFallbacks')),
-        const SizedBox(height: 16),
-        for (var index = 0; index < installed.length; index++) ...[
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: pendingRemoval == null
+          ? null
+          : () => setState(() => pendingRemoval = null),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PageHeader(
+            title: t.text('kernels.title'),
+            description: t.text('kernels.description'),
+          ),
+          const SizedBox(height: 32),
+          SectionTitle(t.text('kernels.runningKernel')),
+          const SizedBox(height: 16),
           StatusRow(
-            label: installed[index].project
-                ? t.text('kernels.projectKernel')
-                : t.text('kernels.ubuntuKernel'),
-            value: Text(
-              installed[index].version,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+            label: t.text('kernels.activeVersion'),
+            value: active.version.isEmpty
+                ? Text(t.text('kernels.notDetected'))
+                : Text(
+                    active.version,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 14,
+                    ),
+                  ),
+            status: active.version.isEmpty
+                ? StatusKind.error
+                : active.project
+                    ? StatusKind.ok
+                    : StatusKind.warning,
+            description: active.version.isEmpty
+                ? t.text('kernels.notDetectedDescription')
+                : active.project
+                    ? t.text('kernels.projectActive')
+                    : t.text('kernels.officialActive'),
+          ),
+          const SizedBox(height: 32),
+          SectionTitle(t.text('kernels.installedFallbacks')),
+          const SizedBox(height: 16),
+          for (var index = 0; index < installed.length; index++) ...[
+            StatusRow(
+              label: installed[index].project
+                  ? t.text('kernels.projectKernel')
+                  : t.text('kernels.ubuntuKernel'),
+              value: Text(
+                installed[index].version,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+              ),
+              status: StatusKind.ok,
+              description: installed[index].project
+                  ? t.text('kernels.projectFallbackDescription')
+                  : t.text('kernels.ubuntuFallbackDescription'),
+              action: installed[index].project
+                  ? AppButton(
+                      label: pendingRemoval == installed[index].version
+                          ? t.text('common.confirmRemoval')
+                          : '',
+                      width: pendingRemoval == installed[index].version
+                          ? null
+                          : 32,
+                      height: 32,
+                      icon: LucideIcons.trash2,
+                      tone: pendingRemoval == installed[index].version
+                          ? ButtonTone.danger
+                          : ButtonTone.ghost,
+                      selected: pendingRemoval == installed[index].version,
+                      busy: busyRelease == installed[index].version,
+                      disabled: unavailable || busyRelease != null,
+                      onPressed: () => removeKernel(installed[index]),
+                    )
+                  : null,
             ),
-            status: StatusKind.ok,
-            description: installed[index].project
-                ? t.text('kernels.projectFallbackDescription')
-                : t.text('kernels.ubuntuFallbackDescription'),
-            action: installed[index].project
+            if (index != installed.length - 1) const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 32),
+          SectionTitle(t.text('kernels.availableUpdates')),
+          const SizedBox(height: 16),
+          StatusRow(
+            key: const ValueKey('manager-software-update'),
+            label: t.text('kernels.managerSoftware'),
+            value: Text(managerUpdateValue),
+            status: managerUpdateStatus,
+            description: managerUpdateDescription,
+            action: managerUpdate.state == ManagerUpdateState.available &&
+                    managerUpdate.releaseUrl != null
                 ? AppButton(
-                    label: pendingRemoval == installed[index].version
-                        ? t.text('common.confirmRemoval')
-                        : '',
-                    width:
-                        pendingRemoval == installed[index].version ? null : 32,
-                    height: 32,
-                    icon: LucideIcons.trash2,
-                    tone: ButtonTone.ghost,
-                    selected: pendingRemoval == installed[index].version,
-                    busy: busyRelease == installed[index].version,
-                    disabled: unavailable || busyRelease != null,
-                    onPressed: () => removeKernel(installed[index]),
+                    label: t.text('common.update'),
+                    icon: LucideIcons.download,
+                    onPressed: manager.openManagerUpdateRelease,
                   )
                 : null,
           ),
-          if (index != installed.length - 1) const SizedBox(height: 12),
-        ],
-        const SizedBox(height: 32),
-        SectionTitle(t.text('kernels.availableUpdates')),
-        const SizedBox(height: 16),
-        StatusRow(
-          key: const ValueKey('manager-software-update'),
-          label: t.text('kernels.managerSoftware'),
-          value: Text(managerUpdateValue),
-          status: managerUpdateStatus,
-          description: managerUpdateDescription,
-          action: managerUpdate.state == ManagerUpdateState.available &&
-                  managerUpdate.releaseUrl != null
-              ? AppButton(
-                  label: t.text('common.update'),
-                  icon: LucideIcons.download,
-                  onPressed: manager.openManagerUpdateRelease,
-                )
-              : null,
-        ),
-        const SizedBox(height: 12),
-        if (available.isEmpty)
-          StatusRow(
-            label: t.text('kernels.releaseStatus'),
-            value: Text(t.text('kernels.upToDate')),
-            status: StatusKind.ok,
-            description: t.text('kernels.noNewRelease'),
-          )
-        else
-          for (var index = 0; index < available.length; index++) ...[
+          const SizedBox(height: 12),
+          if (available.isEmpty)
             StatusRow(
-              label: t.text('kernels.verifiedRelease'),
-              value: Text(
-                available[index].version,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+              label: t.text('kernels.releaseStatus'),
+              value: Text(t.text('kernels.upToDate')),
+              status: StatusKind.ok,
+              description: t.text('kernels.noNewRelease'),
+            )
+          else
+            for (var index = 0; index < available.length; index++) ...[
+              StatusRow(
+                label: t.text('kernels.verifiedRelease'),
+                value: Text(
+                  available[index].version,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+                ),
+                status: StatusKind.info,
+                description: t.text('kernels.publishedRelease', {
+                  'date': available[index].releaseDate ?? '-',
+                }),
+                action: AppButton(
+                  label: t.text('common.install'),
+                  icon: LucideIcons.download,
+                  busy: busyRelease == available[index].version,
+                  disabled: unavailable || busyRelease != null,
+                  onPressed: () => installKernel(available[index]),
+                ),
               ),
-              status: StatusKind.info,
-              description: t.text('kernels.publishedRelease', {
-                'date': available[index].releaseDate ?? '-',
-              }),
-              action: AppButton(
-                label: t.text('common.install'),
-                icon: LucideIcons.download,
-                busy: busyRelease == available[index].version,
-                disabled: unavailable || busyRelease != null,
-                onPressed: () => installKernel(available[index]),
-              ),
-            ),
-            if (index != available.length - 1) const SizedBox(height: 12),
-          ],
-      ],
+              if (index != available.length - 1) const SizedBox(height: 12),
+            ],
+        ],
+      ),
     );
   }
 }

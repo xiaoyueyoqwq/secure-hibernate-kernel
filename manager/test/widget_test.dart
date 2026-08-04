@@ -426,6 +426,28 @@ void main() {
     expect(midway.a, greaterThan(0));
   });
 
+  testWidgets('AppButton labels are measured without truncation',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: Center(
+          child: AppButton(
+            label: '验证 TPM',
+            icon: LucideIcons.shieldCheck,
+            tone: ButtonTone.ghost,
+            onPressed: () {},
+          ),
+        ),
+      ),
+    );
+
+    final label = tester.widget<Text>(find.text('验证 TPM'));
+    expect(label.maxLines, 1);
+    expect(label.softWrap, isFalse);
+    expect(label.overflow, isNull);
+  });
+
   testWidgets('LUKS password dialog captures and dismisses the real route',
       (tester) async {
     final translations = _translations ?? await TranslationCatalog.load();
@@ -704,6 +726,7 @@ void main() {
 
     final confirming = tester.widget<AppButton>(button);
     expect(confirming.label, 'Confirm removal?');
+    expect(confirming.tone, ButtonTone.danger);
     expect(confirming.selected, isTrue);
     expect(find.text('Confirm removal?'), findsOneWidget);
     final container = tester.widget<AnimatedContainer>(
@@ -716,6 +739,14 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(tester.getSize(button).width, greaterThan(collapsedWidth));
+
+    final buttonRect = tester.getRect(button);
+    await tester.tapAt(Offset(buttonRect.left - 24, buttonRect.center.dy));
+    await tester.pump(const Duration(milliseconds: 130));
+    final collapsed = tester.widget<AppButton>(button);
+    expect(collapsed.label, isEmpty);
+    expect(collapsed.selected, isFalse);
+    expect(collapsed.tone, ButtonTone.ghost);
   });
 
   testWidgets('manager surface keeps one fixed frame across pages',
