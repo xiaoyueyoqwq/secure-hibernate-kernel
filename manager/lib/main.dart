@@ -237,15 +237,17 @@ class _ManagerApplication extends StatelessWidget {
         duration: const Duration(milliseconds: 220),
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.topCenter,
+          fit: StackFit.passthrough,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        ),
         transitionBuilder: (child, animation) => FadeTransition(
           opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.025, 0),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
-          ),
+          child: child,
         ),
         child: PageViewport(
           key: ValueKey(activePage),

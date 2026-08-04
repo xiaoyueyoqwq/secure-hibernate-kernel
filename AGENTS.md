@@ -182,6 +182,9 @@
 - Treat the Flutter Manager as the maintained visual and interaction source of
   truth. Preserve its navigation, copy, spacing, colors, radii, icons, states,
   and test-backend behavior unless the user explicitly requests a redesign.
+- Keep shared Manager page switchers top-aligned; do not rely on
+  `AnimatedSwitcher`'s centered default layout, which vertically centers short
+  pages inside the main surface.
 - Keep `manager/` as the sole Flutter application root. Do not reintroduce an
   Electron/Node runtime, a browser compatibility layer, or a migration
   subdirectory such as `manager/flutter_prototype/`.

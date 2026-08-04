@@ -781,6 +781,7 @@ void main() {
     expect(kernelsSurface, overviewSurface);
     expect(kernelsHeadingTop, overviewHeadingTop);
     expect(kernelsSurface.top, lessThan(kernelsHeadingTop));
+    expect(kernelsHeadingTop, lessThan(kernelsSurface.top + 100));
     final pageTransition = tester.widget<AnimatedSwitcher>(
       find.byKey(const ValueKey('manager-page-transition')),
     );

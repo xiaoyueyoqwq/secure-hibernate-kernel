@@ -51,6 +51,12 @@ Manager and kernel Releases use independent version axes. Manager Releases use
 `ubuntu-<source-version>`. A new Manager version on `main` builds only the amd64
 Manager package, while the scheduled kernel workflow never builds the Manager.
 
+Launch the Flutter development application directly from the repository root:
+
+```bash
+./dev.sh
+```
+
 Download a published Manager Release, or build it locally from `manager/`:
 
 ```bash
