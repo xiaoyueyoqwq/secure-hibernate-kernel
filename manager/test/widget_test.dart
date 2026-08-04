@@ -554,6 +554,26 @@ void main() {
     expect(find.text('Diagnostics'), findsNothing);
   });
 
+  testWidgets('Manager updates have overview and available-update entries',
+      (tester) async {
+    await pumpManager(tester);
+    await completeMockSetup(tester);
+
+    final overviewEntry =
+        find.byKey(const ValueKey('overview-manager-updates'));
+    expect(overviewEntry, findsOneWidget);
+    expect(find.text('Manager Updates'), findsOneWidget);
+    await tester.ensureVisible(overviewEntry);
+    await tester.tap(overviewEntry);
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Available Updates'), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('manager-software-update')), findsOneWidget);
+    expect(find.text('Manager Software'), findsOneWidget);
+    expect(find.text('Independent release channel'), findsOneWidget);
+  });
+
   testWidgets('manager surface keeps one fixed frame across pages',
       (tester) async {
     await pumpManager(tester);

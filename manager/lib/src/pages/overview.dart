@@ -165,6 +165,15 @@ class OverviewPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _ActionCard(
+          key: const ValueKey('overview-manager-updates'),
+          title: t.text('overview.managerUpdates'),
+          description: t.text('overview.managerUpdatesDescription'),
+          status: t.text('overview.independentChannel'),
+          openLabel: t.text('common.open'),
+          onPressed: () => manager.setPage(ManagerPage.kernels),
+        ),
+        const SizedBox(height: 12),
+        _ActionCard(
           title: t.text('nav.security'),
           description: t.text('overview.securityDescription'),
           status: !manager.luks
@@ -230,6 +239,7 @@ class _ActionCard extends StatefulWidget {
     required this.status,
     required this.openLabel,
     required this.onPressed,
+    super.key,
   });
 
   final String title;

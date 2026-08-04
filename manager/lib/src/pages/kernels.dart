@@ -141,6 +141,14 @@ class _KernelsPageState extends State<KernelsPage> {
         const SizedBox(height: 32),
         SectionTitle(t.text('kernels.availableUpdates')),
         const SizedBox(height: 16),
+        StatusRow(
+          key: const ValueKey('manager-software-update'),
+          label: t.text('kernels.managerSoftware'),
+          value: Text(t.text('kernels.independentReleaseChannel')),
+          status: StatusKind.info,
+          description: t.text('kernels.managerSoftwareDescription'),
+        ),
+        const SizedBox(height: 12),
         if (available.isEmpty)
           StatusRow(
             label: t.text('kernels.releaseStatus'),
