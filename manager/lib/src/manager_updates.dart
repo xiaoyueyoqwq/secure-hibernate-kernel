@@ -4,7 +4,7 @@ import 'dart:io';
 
 const managerCurrentVersion = String.fromEnvironment(
   'MANAGER_VERSION',
-  defaultValue: '1.0.0+31',
+  defaultValue: '1.0.0+32',
 );
 
 const _releaseApiUrl =

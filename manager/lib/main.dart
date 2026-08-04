@@ -222,7 +222,8 @@ class _ManagerApplication extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final page = switch (context.manager.activePage) {
+    final activePage = context.manager.activePage;
+    final page = switch (activePage) {
       ManagerPage.overview => const OverviewPage(),
       ManagerPage.wizard => const InstallationWizardPage(),
       ManagerPage.kernels => const KernelsPage(),
@@ -231,9 +232,25 @@ class _ManagerApplication extends StatelessWidget {
       ManagerPage.diagnostics => const DiagnosticsPage(),
     };
     return ManagerShell(
-      child: PageViewport(
-        key: ValueKey(context.manager.activePage),
-        child: page,
+      child: AnimatedSwitcher(
+        key: const ValueKey('manager-page-transition'),
+        duration: const Duration(milliseconds: 220),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.025, 0),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        ),
+        child: PageViewport(
+          key: ValueKey(activePage),
+          child: page,
+        ),
       ),
     );
   }
