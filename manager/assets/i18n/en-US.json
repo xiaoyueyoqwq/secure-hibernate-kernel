@@ -33,7 +33,7 @@
     "copyFailed": "Could not copy",
     "install": "Install",
     "update": "Update",
-    "confirmRemoval": "Confirm removal?",
+    "confirmRemoval": "Confirm?",
     "finish": "Finish",
     "continue": "Continue",
     "checkStatus": "Check Status",

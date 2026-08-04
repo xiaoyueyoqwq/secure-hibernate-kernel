@@ -725,10 +725,10 @@ void main() {
     await tester.pump();
 
     final confirming = tester.widget<AppButton>(button);
-    expect(confirming.label, 'Confirm removal?');
+    expect(confirming.label, 'Confirm?');
     expect(confirming.tone, ButtonTone.danger);
     expect(confirming.selected, isTrue);
-    expect(find.text('Confirm removal?'), findsOneWidget);
+    expect(find.text('Confirm?'), findsOneWidget);
     final container = tester.widget<AnimatedContainer>(
       find.descendant(
         of: button,

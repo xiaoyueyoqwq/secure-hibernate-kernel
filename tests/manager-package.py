@@ -132,6 +132,7 @@ class ManagerPackageTests(unittest.TestCase):
             "systemd-cryptsetup",
             "tpm-udev",
             "tpm2-tools",
+            "xdg-utils",
         ):
             with self.subTest(dependency=dependency):
                 self.assertIn(dependency, self.build_script)

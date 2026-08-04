@@ -134,7 +134,7 @@ Section: admin
 Priority: optional
 Architecture: $architecture
 Maintainer: Secure Hibernate Kernel Project <xiaoyueyoqwq@users.noreply.github.com>
-Depends: apt, cryptsetup-bin, dpkg, dracut-core, grub2-common, kmod, libgtk-3-0t64 | libgtk-3-0, libtss2-tcti-device0t64 | libtss2-tcti-device0, mokutil, openssl, passwd, perl, pkexec, polkitd, psmisc, python3, sbsigntool, systemd, systemd-cryptsetup, tpm-udev, tpm2-tools, util-linux, xz-utils, zstd
+Depends: apt, cryptsetup-bin, dpkg, dracut-core, grub2-common, kmod, libgtk-3-0t64 | libgtk-3-0, libtss2-tcti-device0t64 | libtss2-tcti-device0, mokutil, openssl, passwd, perl, pkexec, polkitd, psmisc, python3, sbsigntool, systemd, systemd-cryptsetup, tpm-udev, tpm2-tools, util-linux, xdg-utils, xz-utils, zstd
 Description: Secure Hibernate Manager
  Flutter desktop manager for the signed Secure Hibernate project kernel.
  The package includes the reviewed local update controller and its public
