@@ -28,6 +28,13 @@ class OverviewPage extends StatelessWidget {
     };
     final updateAvailable = manager.kernels
         .any((kernel) => kernel.status == KernelStatus.available);
+    final managerUpdateStatus = switch (manager.managerUpdate.state) {
+      ManagerUpdateState.current => t.text('kernels.upToDate'),
+      ManagerUpdateState.available => t.text('kernels.managerUpdateAvailable'),
+      ManagerUpdateState.checking => t.text('kernels.managerUpdateChecking'),
+      ManagerUpdateState.error => t.text('kernels.managerUpdateFailed'),
+      ManagerUpdateState.unknown => t.text('kernels.managerUpdateNotChecked'),
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -168,7 +175,7 @@ class OverviewPage extends StatelessWidget {
           key: const ValueKey('overview-manager-updates'),
           title: t.text('overview.managerUpdates'),
           description: t.text('overview.managerUpdatesDescription'),
-          status: t.text('overview.independentChannel'),
+          status: managerUpdateStatus,
           openLabel: t.text('common.open'),
           onPressed: () => manager.setPage(ManagerPage.kernels),
         ),

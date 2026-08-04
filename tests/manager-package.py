@@ -140,6 +140,7 @@ class ManagerPackageTests(unittest.TestCase):
         self.assertIn("pubspec.lock", self.build_script)
         self.assertIn(".dart_tool/package_config.json", self.build_script)
         self.assertIn("flutter build linux --release --no-pub", self.build_script)
+        self.assertIn('--dart-define="MANAGER_VERSION=$version"', self.build_script)
 
     def test_postinst_is_fixed_and_valid(self) -> None:
         match = re.search(

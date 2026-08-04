@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backend.dart';
+import 'manager_updates.dart';
 import 'translations.dart';
 
 export 'backend.dart'
@@ -33,6 +34,12 @@ export 'backend.dart'
         SystemStatus,
         UpdateControllerStatus,
         UpdatePolicy;
+export 'manager_updates.dart'
+    show
+        FixedManagerUpdateChecker,
+        ManagerUpdateInfo,
+        ManagerUpdateState,
+        managerCurrentVersion;
 
 enum ManagerPage { overview, wizard, kernels, security, settings, diagnostics }
 
@@ -53,7 +60,8 @@ class ManagerNotice {
 }
 
 class ManagerController extends ChangeNotifier {
-  ManagerController(this.translations, {this.backend})
+  ManagerController(this.translations,
+      {this.backend, ManagerUpdateChecker? updateChecker})
       : language = AppLanguage.fromLocale(
           PlatformDispatcher.instance.locale.languageCode,
           PlatformDispatcher.instance.locale.countryCode,
@@ -61,7 +69,11 @@ class ManagerController extends ChangeNotifier {
         ),
         backendConnection = backend == null
             ? BackendConnection.mock
-            : BackendConnection.loading {
+            : BackendConnection.loading,
+        _updateChecker = updateChecker ??
+            (backend == null
+                ? const FixedManagerUpdateChecker()
+                : const GitHubManagerUpdateChecker()) {
     if (backend == null) {
       deviceName = 'InspironBook';
       ubuntuVersion = 'Ubuntu 26.04 LTS';
@@ -92,12 +104,18 @@ class ManagerController extends ChangeNotifier {
         ),
       ];
       logs.add('[System] Flutter preview is using deterministic mock data');
+      managerUpdate = const ManagerUpdateInfo(
+        state: ManagerUpdateState.current,
+        currentVersion: managerCurrentVersion,
+        latestVersion: managerCurrentVersion,
+      );
     }
     unawaited(_initialize());
   }
 
   final TranslationCatalog translations;
   final ManagerBackend? backend;
+  final ManagerUpdateChecker _updateChecker;
   SharedPreferences? _preferences;
   bool _disposed = false;
   bool _languageChanged = false;
@@ -133,6 +151,7 @@ class ManagerController extends ChangeNotifier {
   List<PreflightDiagnostic> preflightDiagnostics = const [];
   List<String> collectorWarnings = const [];
   UpdateControllerStatus updater = const UpdateControllerStatus.empty();
+  ManagerUpdateInfo managerUpdate = const ManagerUpdateInfo.unknown();
   final List<ManagerNotice> notices = <ManagerNotice>[];
   final List<String> logs = <String>[
     '[System] Application initialized',
@@ -141,6 +160,7 @@ class ManagerController extends ChangeNotifier {
   final Map<String, Timer> _noticeTimers = <String, Timer>{};
   int _noticeCounter = 0;
   Future<ProjectMokInspection>? _activeMokInspection;
+  Future<void>? _activeManagerUpdateCheck;
   bool _startupMokInspectionAttempted = false;
 
   AppMessages get t => translations.messages(language);
@@ -186,6 +206,7 @@ class ManagerController extends ChangeNotifier {
         furthestWizardStep = currentWizardStep;
       }
       await refreshSnapshot();
+      unawaited(checkManagerUpdate());
       if (backendConnection != BackendConnection.error) {
         backendConnection = BackendConnection.native;
       }
@@ -375,6 +396,40 @@ class ManagerController extends ChangeNotifier {
     backendConnection = BackendConnection.native;
     notifyListeners();
     return snapshot;
+  }
+
+  Future<void> checkManagerUpdate() {
+    final active = _activeManagerUpdateCheck;
+    if (active != null) return active;
+    final check = _performManagerUpdateCheck();
+    _activeManagerUpdateCheck = check;
+    return check.whenComplete(() {
+      if (identical(_activeManagerUpdateCheck, check)) {
+        _activeManagerUpdateCheck = null;
+      }
+    });
+  }
+
+  Future<void> _performManagerUpdateCheck() async {
+    managerUpdate = ManagerUpdateInfo(
+      state: ManagerUpdateState.checking,
+      currentVersion: managerCurrentVersion,
+      latestVersion: managerUpdate.latestVersion,
+    );
+    notifyListeners();
+    try {
+      final result = await _updateChecker.check(managerCurrentVersion);
+      if (_disposed) return;
+      managerUpdate = result;
+    } on Object catch (error) {
+      if (_disposed) return;
+      managerUpdate = ManagerUpdateInfo(
+        state: ManagerUpdateState.error,
+        currentVersion: managerCurrentVersion,
+        error: error.toString(),
+      );
+    }
+    notifyListeners();
   }
 
   Future<InstallProgress> getInstallProgress() async {

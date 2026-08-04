@@ -73,6 +73,40 @@ class _KernelsPageState extends State<KernelsPage> {
     final unavailable =
         manager.backendConnection == BackendConnection.loading ||
             manager.backendConnection == BackendConnection.error;
+    final managerUpdate = manager.managerUpdate;
+    final managerUpdateValue = switch (managerUpdate.state) {
+      ManagerUpdateState.current => t.text('kernels.upToDate'),
+      ManagerUpdateState.available => t.text('kernels.managerUpdateAvailable'),
+      ManagerUpdateState.checking => t.text('kernels.managerUpdateChecking'),
+      ManagerUpdateState.error => t.text('kernels.managerUpdateFailed'),
+      ManagerUpdateState.unknown => t.text('kernels.managerUpdateNotChecked'),
+    };
+    final managerUpdateStatus = switch (managerUpdate.state) {
+      ManagerUpdateState.current => StatusKind.ok,
+      ManagerUpdateState.available => StatusKind.warning,
+      ManagerUpdateState.checking => StatusKind.loading,
+      ManagerUpdateState.error => StatusKind.error,
+      ManagerUpdateState.unknown => StatusKind.pending,
+    };
+    final managerUpdateDescription = switch (managerUpdate.state) {
+      ManagerUpdateState.current =>
+        t.text('kernels.managerUpdateCurrentDescription', {
+          'version': managerUpdate.currentVersion,
+        }),
+      ManagerUpdateState.available =>
+        t.text('kernels.managerUpdateAvailableDescription', {
+          'version': managerUpdate.latestVersion ?? '-',
+          'current': managerUpdate.currentVersion,
+        }),
+      ManagerUpdateState.checking =>
+        t.text('kernels.managerUpdateCheckingDescription'),
+      ManagerUpdateState.error => t.text(
+          'kernels.managerUpdateFailedDescription',
+          {'error': managerUpdate.error ?? '-'},
+        ),
+      ManagerUpdateState.unknown =>
+        t.text('kernels.managerUpdateNotCheckedDescription'),
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -144,9 +178,16 @@ class _KernelsPageState extends State<KernelsPage> {
         StatusRow(
           key: const ValueKey('manager-software-update'),
           label: t.text('kernels.managerSoftware'),
-          value: Text(t.text('kernels.independentReleaseChannel')),
-          status: StatusKind.info,
-          description: t.text('kernels.managerSoftwareDescription'),
+          value: Text(managerUpdateValue),
+          status: managerUpdateStatus,
+          description: managerUpdateDescription,
+          action: AppButton(
+            label: t.text('common.recheck'),
+            icon: LucideIcons.refreshCw,
+            busy: managerUpdate.state == ManagerUpdateState.checking,
+            disabled: managerUpdate.state == ManagerUpdateState.checking,
+            onPressed: manager.checkManagerUpdate,
+          ),
         ),
         const SizedBox(height: 12),
         if (available.isEmpty)

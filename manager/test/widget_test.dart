@@ -573,7 +573,13 @@ void main() {
     await tester.ensureVisible(softwareEntry);
     await tester.pump();
     expect(find.text('Manager Software:'), findsOneWidget);
-    expect(find.text('Independent release channel'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: softwareEntry,
+        matching: find.text('Up to Date'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('manager surface keeps one fixed frame across pages',

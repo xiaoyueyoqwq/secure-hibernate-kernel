@@ -38,7 +38,8 @@ trap cleanup EXIT
 printf 'Building Flutter Linux release bundle...\n'
 (
 	cd "$flutter_root"
-	flutter build linux --release --no-pub
+	flutter build linux --release --no-pub \
+		--dart-define="MANAGER_VERSION=$version"
 )
 
 bundle="$flutter_root/build/linux/x64/release/bundle"
