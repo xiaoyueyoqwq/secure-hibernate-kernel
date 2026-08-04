@@ -975,6 +975,7 @@ class AppButton extends StatefulWidget {
     this.tone = ButtonTone.primary,
     this.disabled = false,
     this.busy = false,
+    this.selected = false,
     super.key,
   });
 
@@ -986,6 +987,7 @@ class AppButton extends StatefulWidget {
   final ButtonTone tone;
   final bool disabled;
   final bool busy;
+  final bool selected;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -998,6 +1000,7 @@ class _AppButtonState extends State<AppButton> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final disabled = widget.disabled || widget.busy;
+    final ghostBackground = palette.dark ? Neutral.n800 : Neutral.n100;
     final (background, foreground, border) = switch (widget.tone) {
       ButtonTone.primary => (
           hovered
@@ -1017,11 +1020,9 @@ class _AppButtonState extends State<AppButton> {
           const Color(0xffb91c1c),
         ),
       ButtonTone.ghost => (
-          hovered
-              ? palette.dark
-                  ? Neutral.n800
-                  : Neutral.n100
-              : Colors.transparent,
+          hovered || widget.selected
+              ? ghostBackground
+              : ghostBackground.withValues(alpha: 0),
           palette.textMedium,
           Colors.transparent,
         ),
@@ -1036,7 +1037,7 @@ class _AppButtonState extends State<AppButton> {
           behavior: HitTestBehavior.opaque,
           onTap: disabled ? null : widget.onPressed,
           child: AnimatedContainer(
-            width: widget.width,
+            width: widget.width ?? _contentWidth(context),
             height: widget.height,
             padding: EdgeInsets.symmetric(
               horizontal: widget.label.isEmpty ? 8 : 12,
@@ -1062,18 +1063,20 @@ class _AppButtonState extends State<AppButton> {
                   )
                 else if (widget.icon != null)
                   Icon(widget.icon, size: 14, color: foreground),
-                if ((widget.busy || widget.icon != null) &&
-                    widget.label.isNotEmpty)
-                  const SizedBox(width: 8),
                 if (widget.label.isNotEmpty)
                   Flexible(
-                    child: Text(
-                      widget.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: foreground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: widget.busy || widget.icon != null ? 8 : 0,
+                      ),
+                      child: Text(
+                        widget.label,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: foreground,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ),
@@ -1083,6 +1086,30 @@ class _AppButtonState extends State<AppButton> {
         ),
       ),
     );
+  }
+
+  double _contentWidth(BuildContext context) {
+    final text = TextPainter(
+      text: TextSpan(
+        text: widget.label,
+        style: const TextStyle(
+          fontFamily: 'Ubuntu',
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final leadingWidth = widget.busy
+        ? 15.0
+        : widget.icon == null
+            ? 0.0
+            : 14.0;
+    final spacing = leadingWidth > 0 && widget.label.isNotEmpty ? 8.0 : 0.0;
+    final padding = widget.label.isEmpty ? 16.0 : 24.0;
+    return (padding + leadingWidth + spacing + text.width).ceilToDouble();
   }
 }
 

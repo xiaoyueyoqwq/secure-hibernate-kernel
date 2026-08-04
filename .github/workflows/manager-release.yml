@@ -272,16 +272,43 @@ jobs:
           DEB_NAME: ${{ needs.build.outputs.deb_name }}
           BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
         run: |
+          previous_releases="$RUNNER_TEMP/previous-manager-releases"
+          generated_notes="$RUNNER_TEMP/generated-manager-notes.md"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("manager-v"))) | .tag_name' \
+            > "$previous_releases"
+          previous_manager_tag=$(sed -n '1p' "$previous_releases")
+          if test -n "$previous_manager_tag"; then
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              --raw-field "tag_name=$RELEASE_TAG" \
+              --raw-field "target_commitish=$GITHUB_SHA" \
+              --raw-field "previous_tag_name=$previous_manager_tag" \
+              --jq .body \
+              > "$generated_notes"
+          else
+            printf '[View source commit](https://github.com/%s/commit/%s)\n' \
+              "$GITHUB_REPOSITORY" "$GITHUB_SHA" \
+              > "$generated_notes"
+          fi
+          GENERATED_NOTES_PATH="$generated_notes" \
           python3 - "$RUNNER_TEMP/release-notes.md" <<'PY'
           import os
           import sys
+          from pathlib import Path
 
           repository = os.environ["GITHUB_REPOSITORY"]
           source_ref = os.environ["GITHUB_REF"]
           source_digest = os.environ["GITHUB_SHA"]
           package = os.environ["DEB_NAME"]
           bundle = os.environ["BUNDLE_NAME"]
+          changes = Path(os.environ["GENERATED_NOTES_PATH"]).read_text(
+              encoding="utf-8"
+          ).strip()
           notes = f"""Secure Hibernate Manager {os.environ['VERSION']}.
+
+          {changes}
 
           This Release contains only the Flutter Manager Debian package. It does
           not contain or supersede an `ubuntu-*` kernel Release.

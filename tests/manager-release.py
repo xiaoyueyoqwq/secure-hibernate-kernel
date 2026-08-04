@@ -313,6 +313,10 @@ class ManagerReleaseTests(unittest.TestCase):
         self.assertIn("--signer-workflow", workflow)
         self.assertIn("--source-ref", workflow)
         self.assertIn("--source-digest", workflow)
+        self.assertIn('startswith("manager-v")', workflow)
+        self.assertIn("releases/generate-notes", workflow)
+        self.assertIn("previous_tag_name=$previous_manager_tag", workflow)
+        self.assertIn("GENERATED_NOTES_PATH", workflow)
         self.assertNotIn("PROJECT_MOK_PRIVATE_KEY", workflow)
         self.assertNotIn("release-signing", workflow)
         checks = (REPO_ROOT / ".github" / "workflows" / "checks.yml").read_text(

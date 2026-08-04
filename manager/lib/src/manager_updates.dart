@@ -4,11 +4,14 @@ import 'dart:io';
 
 const managerCurrentVersion = String.fromEnvironment(
   'MANAGER_VERSION',
-  defaultValue: '1.0.0+28',
+  defaultValue: '1.0.0+29',
 );
 
 const _releaseApiUrl =
     'https://api.github.com/repos/xiaoyueyoqwq/secure-hibernate-kernel/releases?per_page=30';
+const _releaseOwner = 'xiaoyueyoqwq';
+const _releaseRepository = 'secure-hibernate-kernel';
+const _xdgOpen = '/usr/bin/xdg-open';
 const _maxResponseBytes = 2 * 1024 * 1024;
 final _managerVersionPattern = RegExp(
   r'^manager-v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+(\d+))?$',
@@ -94,7 +97,7 @@ class GitHubManagerUpdateChecker implements ManagerUpdateChecker {
         final url = entry['html_url'];
         releases.add(_ManagerRelease(
           version,
-          url is String && Uri.tryParse(url)?.isAbsolute == true ? url : null,
+          url is String && _trustedManagerReleaseUri(url) != null ? url : null,
         ));
       }
       if (releases.isEmpty) {
@@ -102,6 +105,9 @@ class GitHubManagerUpdateChecker implements ManagerUpdateChecker {
       }
       releases.sort((a, b) => b.version.compareTo(a.version));
       final latest = releases.first;
+      if (latest.url == null) {
+        return _error(currentVersion, 'Manager Release URL is invalid');
+      }
       final installed = _ManagerVersion.parse('manager-v$currentVersion');
       if (installed == null) {
         return _error(currentVersion, 'Installed Manager version is invalid');
@@ -132,6 +138,46 @@ class GitHubManagerUpdateChecker implements ManagerUpdateChecker {
         currentVersion: currentVersion,
         error: error.length > 240 ? error.substring(0, 240) : error,
       );
+}
+
+Uri? _trustedManagerReleaseUri(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri == null ||
+      uri.scheme != 'https' ||
+      uri.host != 'github.com' ||
+      uri.hasPort ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasQuery ||
+      uri.hasFragment) {
+    return null;
+  }
+  final segments = uri.pathSegments;
+  if (segments.length != 5 ||
+      segments[0] != _releaseOwner ||
+      segments[1] != _releaseRepository ||
+      segments[2] != 'releases' ||
+      segments[3] != 'tag' ||
+      _ManagerVersion.parse(segments[4]) == null) {
+    return null;
+  }
+  return uri;
+}
+
+Future<void> openManagerRelease(String releaseUrl) async {
+  final uri = _trustedManagerReleaseUri(releaseUrl);
+  if (uri == null) {
+    throw const FormatException('Manager Release URL is invalid');
+  }
+  final result = await Process.run(_xdgOpen, [uri.toString()]);
+  if (result.exitCode != 0) {
+    final detail = result.stderr.toString().trim();
+    throw ProcessException(
+      _xdgOpen,
+      [uri.toString()],
+      detail.isEmpty ? 'Unable to open the Manager Release' : detail,
+      result.exitCode,
+    );
+  }
 }
 
 Future<String> _readBounded(HttpClientResponse response) async {

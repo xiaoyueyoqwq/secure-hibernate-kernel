@@ -21,7 +21,9 @@
     "authorizationDeniedDescription": "The privileged action was cancelled or denied. No system changes were made.",
     "privilegedActionFailedTitle": "Privileged action failed",
     "privilegedActionFailedDescription": "{action}: {error}",
-    "unknownPrivilegedError": "The privileged action returned no error details."
+    "unknownPrivilegedError": "The privileged action returned no error details.",
+    "managerUpdateOpenFailedTitle": "Could not open update",
+    "managerUpdateOpenFailedDescription": "Open the latest Manager Release from the project repository and install its Debian package manually."
   },
   "common": {
     "open": "Open",
@@ -30,6 +32,8 @@
     "copied": "Copied",
     "copyFailed": "Could not copy",
     "install": "Install",
+    "update": "Update",
+    "confirmRemoval": "Confirm removal?",
     "finish": "Finish",
     "continue": "Continue",
     "checkStatus": "Check Status",
@@ -243,7 +247,7 @@
     "managerUpdateFailed": "Check failed",
     "managerUpdateNotChecked": "Not checked",
     "managerUpdateCurrentDescription": "Manager {version} is installed and no newer release was found.",
-    "managerUpdateAvailableDescription": "Manager {version} is available; the installed version is {current}.",
+    "managerUpdateAvailableDescription": "Manager {version} is available; the installed version is {current}. Select Update to open its Release page.",
     "managerUpdateCheckingDescription": "Checking the latest signed Manager Release.",
     "managerUpdateFailedDescription": "Manager Release check failed: {error}",
     "managerUpdateNotCheckedDescription": "Manager Release status has not been checked yet.",

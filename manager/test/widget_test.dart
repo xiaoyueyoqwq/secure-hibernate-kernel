@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,12 +10,28 @@ import 'package:secure_hibernate_manager/src/app_state.dart';
 import 'package:secure_hibernate_manager/src/backend.dart';
 import 'package:secure_hibernate_manager/main.dart';
 import 'package:secure_hibernate_manager/src/pages/installation_wizard.dart';
+import 'package:secure_hibernate_manager/src/pages/kernels.dart';
+import 'package:secure_hibernate_manager/src/pages/overview.dart';
 import 'package:secure_hibernate_manager/src/translations.dart';
 import 'package:secure_hibernate_manager/src/theme.dart';
 import 'package:secure_hibernate_manager/src/widgets/core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 TranslationCatalog? _translations;
+
+class _AvailableManagerUpdateChecker implements ManagerUpdateChecker {
+  const _AvailableManagerUpdateChecker();
+
+  @override
+  Future<ManagerUpdateInfo> check(String currentVersion) async =>
+      ManagerUpdateInfo(
+        state: ManagerUpdateState.available,
+        currentVersion: currentVersion,
+        latestVersion: '1.0.0+999',
+        releaseUrl: 'https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/'
+            'releases/tag/manager-v1.0.0+999',
+      );
+}
 
 UpdateControllerStatus testUpdaterStatus({
   String? status,
@@ -369,6 +386,47 @@ Future<void> completeMockSetup(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('ghost button hover keeps the target RGB while fading in',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: Center(
+          child: AppButton(
+            label: 'Verify TPM',
+            tone: ButtonTone.ghost,
+            onPressed: () {},
+          ),
+        ),
+      ),
+    );
+    final button = find.byType(AppButton);
+    final container = find.descendant(
+      of: button,
+      matching: find.byType(AnimatedContainer),
+    );
+    Color background() =>
+        (tester.widget<AnimatedContainer>(container).decoration
+                as BoxDecoration)
+            .color!;
+
+    expect(background().a, 0);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(button));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 65));
+
+    final midway = background();
+    expect(
+      midway.toARGB32() & 0x00ffffff,
+      Neutral.n100.toARGB32() & 0x00ffffff,
+    );
+    expect(midway.a, greaterThan(0));
+    expect(midway.a, lessThan(1));
+  });
+
   testWidgets('LUKS password dialog captures and dismisses the real route',
       (tester) async {
     final translations = _translations ?? await TranslationCatalog.load();
@@ -580,6 +638,79 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(find.text('Check Again'), findsNothing);
+    expect(find.text('Update'), findsNothing);
+  });
+
+  testWidgets('available Manager update requires overview attention',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final manager = ManagerController(
+      translations,
+      updateChecker: const _AvailableManagerUpdateChecker(),
+    );
+    addTearDown(manager.dispose);
+    manager.projectMokStatus = ProjectMokStatus.enrolled;
+    await manager.checkManagerUpdate();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: ManagerScope(
+          controller: manager,
+          child: const SingleChildScrollView(child: OverviewPage()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('Ready'), findsNothing);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: ManagerScope(
+          controller: manager,
+          child: const SingleChildScrollView(child: KernelsPage()),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Update'), findsOneWidget);
+    expect(find.text('Check Again'), findsNothing);
+  });
+
+  testWidgets('kernel removal expands into an explicit confirmation',
+      (tester) async {
+    await pumpManager(tester);
+    await completeMockSetup(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AppSidebar),
+        matching: find.text('Kernels & Updates'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final trash = find.byIcon(LucideIcons.trash2);
+    await tester.ensureVisible(trash);
+    final button = find.ancestor(of: trash, matching: find.byType(AppButton));
+    final collapsedWidth = tester.getSize(button).width;
+    await tester.tap(trash);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 65));
+
+    final confirming = tester.widget<AppButton>(button);
+    expect(confirming.label, 'Confirm removal?');
+    expect(confirming.selected, isTrue);
+    expect(find.text('Confirm removal?'), findsOneWidget);
+    final midwayWidth = tester.getSize(button).width;
+    expect(midwayWidth, greaterThan(collapsedWidth));
+
+    await tester.pumpAndSettle();
+    expect(tester.getSize(button).width, greaterThan(midwayWidth));
   });
 
   testWidgets('manager surface keeps one fixed frame across pages',

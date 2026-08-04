@@ -19,8 +19,11 @@ class OverviewPage extends StatelessWidget {
         manager.projectMokStatus == ProjectMokStatus.enrolled &&
         manager.activeKernel.project &&
         manager.officialFallbackInstalled;
-    final enhancementRecommended = operational && !manager.luks;
-    final ready = operational && manager.luks;
+    final managerUpdateAvailable =
+        manager.managerUpdate.state == ManagerUpdateState.available;
+    final enhancementRecommended =
+        operational && !manager.luks && !managerUpdateAvailable;
+    final ready = operational && manager.luks && !managerUpdateAvailable;
     final policy = switch (manager.updatePolicy) {
       UpdatePolicy.automaticInstall => t.text('overview.automaticInstall'),
       UpdatePolicy.checkAndNotify => t.text('overview.checkAndNotify'),

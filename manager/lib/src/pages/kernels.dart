@@ -157,13 +157,15 @@ class _KernelsPageState extends State<KernelsPage> {
                 : t.text('kernels.ubuntuFallbackDescription'),
             action: installed[index].project
                 ? AppButton(
-                    label: '',
-                    width: 32,
+                    label: pendingRemoval == installed[index].version
+                        ? t.text('common.confirmRemoval')
+                        : '',
+                    width:
+                        pendingRemoval == installed[index].version ? null : 32,
                     height: 32,
                     icon: LucideIcons.trash2,
-                    tone: pendingRemoval == installed[index].version
-                        ? ButtonTone.danger
-                        : ButtonTone.ghost,
+                    tone: ButtonTone.ghost,
+                    selected: pendingRemoval == installed[index].version,
                     busy: busyRelease == installed[index].version,
                     disabled: unavailable || busyRelease != null,
                     onPressed: () => removeKernel(installed[index]),
@@ -181,13 +183,14 @@ class _KernelsPageState extends State<KernelsPage> {
           value: Text(managerUpdateValue),
           status: managerUpdateStatus,
           description: managerUpdateDescription,
-          action: AppButton(
-            label: t.text('common.recheck'),
-            icon: LucideIcons.refreshCw,
-            busy: managerUpdate.state == ManagerUpdateState.checking,
-            disabled: managerUpdate.state == ManagerUpdateState.checking,
-            onPressed: manager.checkManagerUpdate,
-          ),
+          action: managerUpdate.state == ManagerUpdateState.available &&
+                  managerUpdate.releaseUrl != null
+              ? AppButton(
+                  label: t.text('common.update'),
+                  icon: LucideIcons.download,
+                  onPressed: manager.openManagerUpdateRelease,
+                )
+              : null,
         ),
         const SizedBox(height: 12),
         if (available.isEmpty)

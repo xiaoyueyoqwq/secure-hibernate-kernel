@@ -335,3 +335,15 @@
   gone, do not block the independent active overlay on a deferred mapping that
   points to an already-unlinked discarded inode. The reset conversion uses a
   separate NBD device and must verify its own active path.
+- When animating a Manager control from transparent to a visible color, keep
+  the target RGB values in the transparent endpoint and animate only alpha.
+  `Colors.transparent` is transparent black and produces a dark intermediate
+  flash when interpolated toward a light hover background.
+- Keep the Manager software check automatic. Show no persistent recheck action
+  when the installed version is current; show a trusted Release update action
+  only for a newer `manager-v*` Release, and include that state in the overview
+  attention summary.
+- Icon-only destructive Manager actions must reveal an explicit confirmation
+  label before execution. Keep the icon and label in one control and animate
+  the control width so the confirmation state is understandable without
+  relying on an undocumented second-click convention.

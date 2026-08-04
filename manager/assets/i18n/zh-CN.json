@@ -21,7 +21,9 @@
     "authorizationDeniedDescription": "特权操作已被取消或拒绝，系统未作任何修改。",
     "privilegedActionFailedTitle": "特权操作失败",
     "privilegedActionFailedDescription": "{action}：{error}",
-    "unknownPrivilegedError": "特权操作未返回错误详情。"
+    "unknownPrivilegedError": "特权操作未返回错误详情。",
+    "managerUpdateOpenFailedTitle": "无法打开更新页面",
+    "managerUpdateOpenFailedDescription": "请从项目仓库打开最新的管理器 Release，并手动安装其中的 Debian 软件包。"
   },
   "common": {
     "open": "打开",
@@ -30,6 +32,8 @@
     "copied": "已复制",
     "copyFailed": "复制失败",
     "install": "安装",
+    "update": "更新",
+    "confirmRemoval": "确认删除？",
     "finish": "完成",
     "continue": "继续",
     "checkStatus": "检查状态",
@@ -243,7 +247,7 @@
     "managerUpdateFailed": "检查失败",
     "managerUpdateNotChecked": "尚未检查",
     "managerUpdateCurrentDescription": "已安装管理器 {version}，没有发现更新版本。",
-    "managerUpdateAvailableDescription": "管理器 {version} 可用，当前安装版本为 {current}。",
+    "managerUpdateAvailableDescription": "管理器 {version} 可用，当前安装版本为 {current}。点击“更新”打开对应的 Release 页面。",
     "managerUpdateCheckingDescription": "正在检查最新的已签名管理器 Release。",
     "managerUpdateFailedDescription": "管理器 Release 检查失败：{error}",
     "managerUpdateNotCheckedDescription": "尚未检查管理器 Release 状态。",

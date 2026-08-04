@@ -37,6 +37,7 @@ export 'backend.dart'
 export 'manager_updates.dart'
     show
         FixedManagerUpdateChecker,
+        ManagerUpdateChecker,
         ManagerUpdateInfo,
         ManagerUpdateState,
         managerCurrentVersion;
@@ -430,6 +431,25 @@ class ManagerController extends ChangeNotifier {
       );
     }
     notifyListeners();
+  }
+
+  Future<void> openManagerUpdateRelease() async {
+    final releaseUrl = managerUpdate.releaseUrl;
+    if (managerUpdate.state != ManagerUpdateState.available ||
+        releaseUrl == null) {
+      addLog('[Error] Manager update: no trusted Release is available');
+      return;
+    }
+    try {
+      await openManagerRelease(releaseUrl);
+    } on Object catch (error) {
+      addLog('[Error] Manager update: unable to open Release: $error');
+      addNotice(
+        type: ManagerNoticeType.error,
+        title: t.text('alerts.managerUpdateOpenFailedTitle'),
+        description: t.text('alerts.managerUpdateOpenFailedDescription'),
+      );
+    }
   }
 
   Future<InstallProgress> getInstallProgress() async {
