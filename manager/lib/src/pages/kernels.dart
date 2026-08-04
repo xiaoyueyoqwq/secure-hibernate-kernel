@@ -17,12 +17,13 @@ class _KernelsPageState extends State<KernelsPage> {
 
   Future<void> removeKernel(KernelInfo kernel) async {
     final manager = context.manager;
-    if (!manager.native) {
-      manager.addLog('Requested uninstall on kernel ${kernel.version}');
-      return;
-    }
     if (pendingRemoval != kernel.version) {
       setState(() => pendingRemoval = kernel.version);
+      return;
+    }
+    if (!manager.native) {
+      manager.addLog('Requested uninstall on kernel ${kernel.version}');
+      setState(() => pendingRemoval = null);
       return;
     }
     setState(() => busyRelease = kernel.version);

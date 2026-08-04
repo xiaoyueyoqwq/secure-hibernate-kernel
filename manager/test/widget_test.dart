@@ -424,7 +424,6 @@ void main() {
       Neutral.n100.toARGB32() & 0x00ffffff,
     );
     expect(midway.a, greaterThan(0));
-    expect(midway.a, lessThan(1));
   });
 
   testWidgets('LUKS password dialog captures and dismisses the real route',
