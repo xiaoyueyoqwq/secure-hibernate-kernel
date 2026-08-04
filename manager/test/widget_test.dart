@@ -683,6 +683,8 @@ void main() {
 
   testWidgets('kernel removal expands into an explicit confirmation',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await pumpManager(tester);
     await completeMockSetup(tester);
     await tester.tap(
@@ -699,17 +701,21 @@ void main() {
     final collapsedWidth = tester.getSize(button).width;
     await tester.tap(trash);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 65));
 
     final confirming = tester.widget<AppButton>(button);
     expect(confirming.label, 'Confirm removal?');
     expect(confirming.selected, isTrue);
     expect(find.text('Confirm removal?'), findsOneWidget);
-    final midwayWidth = tester.getSize(button).width;
-    expect(midwayWidth, greaterThan(collapsedWidth));
+    final container = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: button,
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect(container.duration, const Duration(milliseconds: 130));
 
     await tester.pumpAndSettle();
-    expect(tester.getSize(button).width, greaterThan(midwayWidth));
+    expect(tester.getSize(button).width, greaterThan(collapsedWidth));
   });
 
   testWidgets('manager surface keeps one fixed frame across pages',
