@@ -1049,38 +1049,44 @@ class _AppButtonState extends State<AppButton> {
               border: Border.all(color: border),
             ),
             alignment: Alignment.center,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (widget.busy)
-                  SizedBox.square(
-                    dimension: 15,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: foreground,
-                    ),
-                  )
-                else if (widget.icon != null)
-                  Icon(widget.icon, size: 14, color: foreground),
-                if (widget.label.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: widget.busy || widget.icon != null ? 8 : 0,
-                    ),
-                    child: Text(
-                      widget.label,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: TextStyle(
-                        color: foreground,
-                        fontFamily: 'Ubuntu',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.center,
+                maxWidth: double.infinity,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (widget.busy)
+                      SizedBox.square(
+                        dimension: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: foreground,
+                        ),
+                      )
+                    else if (widget.icon != null)
+                      Icon(widget.icon, size: 14, color: foreground),
+                    if (widget.label.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: widget.busy || widget.icon != null ? 8 : 0,
+                        ),
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: TextStyle(
+                            color: foreground,
+                            fontFamily: 'Ubuntu',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1109,7 +1115,7 @@ class _AppButtonState extends State<AppButton> {
             : 14.0;
     final spacing = leadingWidth > 0 && widget.label.isNotEmpty ? 8.0 : 0.0;
     final padding = widget.label.isEmpty ? 16.0 : 24.0;
-    return (padding + leadingWidth + spacing + text.width).ceilToDouble();
+    return (padding + leadingWidth + spacing + text.width).ceilToDouble() + 4;
   }
 }
 
