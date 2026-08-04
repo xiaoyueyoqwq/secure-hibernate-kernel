@@ -572,7 +572,7 @@ void main() {
     expect(softwareEntry, findsOneWidget);
     await tester.ensureVisible(softwareEntry);
     await tester.pump();
-    expect(find.text('Manager Software'), findsOneWidget);
+    expect(find.text('Manager Software:'), findsOneWidget);
     expect(find.text('Independent release channel'), findsOneWidget);
   });
 
