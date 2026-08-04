@@ -2,17 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:url_launcher/url_launcher.dart';
+
 const managerCurrentVersion = String.fromEnvironment(
   'MANAGER_VERSION',
-  defaultValue: '1.0.0+32',
+  defaultValue: '1.0.0+33',
 );
 
 const _releaseApiUrl =
     'https://api.github.com/repos/xiaoyueyoqwq/secure-hibernate-kernel/releases?per_page=30';
 const _releaseOwner = 'xiaoyueyoqwq';
 const _releaseRepository = 'secure-hibernate-kernel';
-const _gio = '/usr/bin/gio';
-const _xdgOpen = '/usr/bin/xdg-open';
 const _maxResponseBytes = 2 * 1024 * 1024;
 final _managerVersionPattern = RegExp(
   r'^manager-v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+(\d+))?$',
@@ -169,35 +169,10 @@ Future<void> openManagerRelease(String releaseUrl) async {
   if (uri == null) {
     throw const FormatException('Manager Release URL is invalid');
   }
-
-  const openers = <(String, List<String>)>[
-    (_gio, ['open']),
-    (_xdgOpen, []),
-  ];
-  String? failure;
-  ProcessException? processError;
-  for (final (command, prefix) in openers) {
-    final arguments = [...prefix, uri.toString()];
-    try {
-      final result = await Process.run(command, arguments);
-      if (result.exitCode == 0) return;
-      final detail = result.stderr.toString().trim();
-      failure = detail.isEmpty
-          ? 'Browser opener exited with status ${result.exitCode}'
-          : detail;
-    } on ProcessException catch (error) {
-      processError = error;
-    }
+  final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!opened) {
+    throw StateError('Unable to open the Manager Release');
   }
-  if (processError != null && failure == null) {
-    throw processError;
-  }
-  throw ProcessException(
-    _gio,
-    ['open', uri.toString()],
-    failure ?? 'Unable to open the Manager Release',
-    1,
-  );
 }
 
 Future<String> _readBounded(HttpClientResponse response) async {

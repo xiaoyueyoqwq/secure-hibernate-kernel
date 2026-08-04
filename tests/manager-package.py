@@ -25,6 +25,10 @@ class ManagerPackageTests(unittest.TestCase):
         self.assertTrue((MANAGER_ROOT / "pubspec.yaml").is_file())
         self.assertTrue((MANAGER_ROOT / "pubspec.lock").is_file())
         self.assertTrue((MANAGER_ROOT / "lib" / "main.dart").is_file())
+        self.assertIn(
+            "url_launcher:",
+            (MANAGER_ROOT / "pubspec.yaml").read_text(encoding="utf-8"),
+        )
         self.assertFalse((MANAGER_ROOT / "flutter_prototype").exists())
         for obsolete in (
             "electron-builder.yml",
@@ -132,7 +136,6 @@ class ManagerPackageTests(unittest.TestCase):
             "systemd-cryptsetup",
             "tpm-udev",
             "tpm2-tools",
-            "xdg-utils",
         ):
             with self.subTest(dependency=dependency):
                 self.assertIn(dependency, self.build_script)

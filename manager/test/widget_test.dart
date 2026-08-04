@@ -667,9 +667,11 @@ void main() {
       (tester) async {
     final translations = _translations ?? await TranslationCatalog.load();
     _translations = translations;
+    String? openedRelease;
     final manager = ManagerController(
       translations,
       updateChecker: const _AvailableManagerUpdateChecker(),
+      releaseOpener: (releaseUrl) async => openedRelease = releaseUrl,
     );
     addTearDown(manager.dispose);
     manager.projectMokStatus = ProjectMokStatus.enrolled;
@@ -701,6 +703,13 @@ void main() {
     await tester.pump();
     expect(find.text('Update'), findsOneWidget);
     expect(find.text('Check Again'), findsNothing);
+    await tester.tap(find.text('Update'));
+    await tester.pump();
+    expect(
+      openedRelease,
+      'https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/'
+      'releases/tag/manager-v1.0.0+999',
+    );
   });
 
   testWidgets('kernel removal expands into an explicit confirmation',

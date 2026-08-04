@@ -61,9 +61,13 @@ class ManagerNotice {
 }
 
 class ManagerController extends ChangeNotifier {
-  ManagerController(this.translations,
-      {this.backend, ManagerUpdateChecker? updateChecker})
-      : language = AppLanguage.fromLocale(
+  ManagerController(
+    this.translations, {
+    this.backend,
+    ManagerUpdateChecker? updateChecker,
+    Future<void> Function(String)? releaseOpener,
+  })  : _releaseOpener = releaseOpener ?? openManagerRelease,
+        language = AppLanguage.fromLocale(
           PlatformDispatcher.instance.locale.languageCode,
           PlatformDispatcher.instance.locale.countryCode,
           PlatformDispatcher.instance.locale.scriptCode,
@@ -117,6 +121,7 @@ class ManagerController extends ChangeNotifier {
   final TranslationCatalog translations;
   final ManagerBackend? backend;
   final ManagerUpdateChecker _updateChecker;
+  final Future<void> Function(String) _releaseOpener;
   SharedPreferences? _preferences;
   bool _disposed = false;
   bool _languageChanged = false;
@@ -441,7 +446,7 @@ class ManagerController extends ChangeNotifier {
       return;
     }
     try {
-      await openManagerRelease(releaseUrl);
+      await _releaseOpener(releaseUrl);
     } on Object catch (error) {
       addLog('[Error] Manager update: unable to open Release: $error');
       addNotice(
