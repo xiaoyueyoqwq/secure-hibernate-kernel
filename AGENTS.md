@@ -317,6 +317,9 @@
   state appears. systemd can briefly report inactive while the job is queued;
   require a bounded sequence of consecutive inactive polls or an explicit
   terminal check state before failing recovery.
+- Manager background polling must use an explicitly cancellable Timer and
+  complete its pending wait from `dispose()`. An exit flag around
+  `Future.delayed` leaves a live FakeAsync timer after the widget tree closes.
 - For offline guest maintenance, never recursively bind the host `/run` into a
   chroot whose path is itself below `/run`; use a private tmpfs for the guest
   `/run` and make all bind mounts private before entering the chroot. Shared
