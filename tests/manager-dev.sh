@@ -51,8 +51,8 @@ EOF
 cp -- "$repo_root/manager/linux/resources/app-icon.png" "$icon_target"
 
 result=$temporary_root/flutter-result
-run_dev_script env PATH=$fake_bin:/usr/bin:/bin XDG_DATA_HOME=$data_root \
-	FLUTTER_TEST_RESULT=$result "$dev_script"
+run_dev_script env PATH="$fake_bin":/usr/bin:/bin XDG_DATA_HOME="$data_root" \
+	FLUTTER_TEST_RESULT="$result" "$dev_script"
 
 [[ ! -e $desktop_target ]]
 [[ ! -e $icon_target ]]
@@ -63,12 +63,13 @@ mapfile -t invocation <"$result"
 [[ ${invocation[3]} == linux ]]
 
 printf '%s\n' '[Desktop Entry]' 'Name=User override' >"$desktop_target"
-run_dev_script env PATH=$fake_bin:/usr/bin:/bin XDG_DATA_HOME=$data_root \
-	FLUTTER_TEST_RESULT=$result "$dev_script" 2>"$temporary_root/warning"
+run_dev_script env PATH="$fake_bin":/usr/bin:/bin XDG_DATA_HOME="$data_root" \
+	FLUTTER_TEST_RESULT="$result" "$dev_script" 2>"$temporary_root/warning"
 
 [[ -f $desktop_target ]]
 grep -Fq 'preserving unrecognized user desktop entry' "$temporary_root/warning"
 
+# shellcheck disable=SC2016
 if grep -Eq 'mv -f|install -m 0644|> *"*\$desktop_target' "$dev_script"; then
 	printf 'Development script must not install a desktop entry.\n' >&2
 	exit 1
