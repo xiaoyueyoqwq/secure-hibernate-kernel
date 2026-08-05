@@ -115,12 +115,14 @@ of the canonical repository, exact Git commit, complete asset set, sizes, and
 SHA-256 values; it repeats those checks after copying the files across the root
 trust boundary. No later Manifest-less tag is accepted.
 
-Manager Releases use a separate trust and version domain. On each `main` push,
-`manager-release.yml` compares the exact `manager-v<pubspec version>` marker
-with the published asset set. It skips a complete Release and automatically
-builds, signs, tags, and publishes only a new version. Build and signing jobs
-have read-only repository access; only the final verified publish job receives
-`contents: write`.
+Manager Releases use a separate trust and version domain. After the project
+checks pass on each `main` push, `checks.yml` invokes the reusable
+`manager-release.yml`, which compares the exact `manager-v<pubspec version>`
+marker with the published asset set. It skips a complete Release and
+automatically builds, signs, tags, and publishes only a new version. The caller
+grants the maximum permission set required by the reusable workflow, while its
+build, signing, and publish jobs reduce that set independently; only the final
+verified publish job receives `contents: write`.
 
 The Manager package does not use or receive `PROJECT_MOK_PRIVATE_KEY_B64`.
 GitHub's OIDC-backed provenance signs the exact `.deb`, canonical checksum, and

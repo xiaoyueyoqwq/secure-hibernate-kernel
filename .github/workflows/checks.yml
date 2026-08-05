@@ -1,4 +1,4 @@
-name: Check project scripts
+name: Check project and release Manager
 
 on:
   push:
@@ -8,12 +8,11 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: checks-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   checks:
+    concurrency:
+      group: checks-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
@@ -68,3 +67,16 @@ jobs:
           dart format --output=none --set-exit-if-changed lib test
           flutter analyze
           flutter test
+
+  manager_release:
+    name: Manager release
+    needs: checks
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref_type == 'branch' &&
+      github.ref_name == github.event.repository.default_branch
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/manager-release.yml

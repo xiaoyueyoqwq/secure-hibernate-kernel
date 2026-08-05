@@ -136,8 +136,9 @@ Manager Releases are independent from kernel Releases. Update the `version:` in
 `pubspec.yaml` and merge that commit into `main`; no manual tag or Release is
 required.
 
-The `Build and release Secure Hibernate Manager` workflow compares the exact
-`manager-v<version>` Release with the source version. It skips a complete
+After the project checks pass on `main`, the `Check project and release Manager`
+workflow invokes the reusable Manager release workflow. It compares the exact
+`manager-v<version>` Release with the source version and skips a complete
 existing Release. For a new version it builds and tests the amd64 package,
 verifies its Debian metadata, creates `SHA256SUMS` and
 `manager-release.json`, signs all three files together with GitHub
@@ -145,10 +146,10 @@ OIDC/Sigstore provenance, creates the version tag at the workflow commit, and
 publishes the Release automatically. Release notes are generated from the
 previous published `manager-v*` tag and include GitHub's full changelog link;
 kernel tags are never used as the comparison base. The workflow refuses
-incomplete Releases, unexpected assets, and existing tags. A manual workflow
-run is an explicit retry for an unpublished version and cannot replace a
-completed Release. Kernel tags use the separate `ubuntu-*` namespace and do not
-invoke this workflow.
+incomplete Releases, unexpected assets, and existing tags. A direct manual run
+is an explicit retry for an unpublished version and cannot replace a completed
+Release. Kernel tags use the separate `ubuntu-*` namespace and do not invoke
+this workflow.
 
 The application icon is a recolored rendering of the AMP icon from the
 CC0-1.0 `gilbarbara/logos` collection, also indexed by SVG Repo as asset

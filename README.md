@@ -69,9 +69,10 @@ Package installation deploys the application and update controller. It does
 not enroll the project MOK, install a kernel, change LUKS/TPM metadata, or
 restart automatically. Those operations remain explicit steps in the Manager.
 
-The `Build and release Secure Hibernate Manager` workflow checks the version on
-every `main` push. It skips an existing complete Release; a new version is
-built, tested, signed with GitHub OIDC/Sigstore provenance, and published
+The `Check project and release Manager` workflow runs the project checks on
+every push and invokes the reusable Manager release workflow after a successful
+`main` check. It skips an existing complete Release; a new version is built,
+tested, signed with GitHub OIDC/Sigstore provenance, and published
 automatically. The application icon is a recolored rendering of the CC0-1.0 AMP
 icon from `gilbarbara/logos`. CC0 does not grant trademark rights; this project
 is not affiliated with or endorsed by the AMP project.

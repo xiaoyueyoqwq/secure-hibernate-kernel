@@ -201,6 +201,10 @@
 - Keep Manager and kernel publication independent. `manager-v<pubspec version>`
   Releases may contain only the Manager package, checksum, descriptor, and
   provenance bundle; `ubuntu-*` Releases remain the signed kernel channel.
+- Keep `checks.yml` as the sole push/PR entry point. It invokes the reusable
+  `manager-release.yml` only after successful default-branch checks. Keep check
+  cancellation at job scope so a newer push cannot cancel an active release;
+  retain the fixed Manager release concurrency group and per-job permissions.
 - Drive Manager publication from a new `pubspec.yaml` version on `main`. Skip an
   existing complete Release, refuse incomplete Releases or reused tags, and
   create the matching tag only after the package, checksum, and descriptor all

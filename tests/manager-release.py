@@ -281,7 +281,10 @@ class ManagerReleaseTests(unittest.TestCase):
     def test_workflow_automatically_signs_and_publishes_new_versions(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         triggers = workflow.split("\npermissions:\n", 1)[0]
-        self.assertIn("branches:\n      - main\n", triggers)
+        self.assertIn("workflow_call:\n", triggers)
+        self.assertIn("workflow_dispatch:\n", triggers)
+        self.assertNotIn("push:", triggers)
+        self.assertNotIn("branches:", triggers)
         self.assertNotIn("tags:", triggers)
         self.assertNotIn("ubuntu-", triggers)
         self.assertNotIn("schedule:", triggers)
@@ -321,6 +324,27 @@ class ManagerReleaseTests(unittest.TestCase):
         self.assertNotIn("release-signing", workflow)
         checks = (REPO_ROOT / ".github" / "workflows" / "checks.yml").read_text(
             encoding="utf-8"
+        )
+        check_triggers = checks.split("\npermissions:\n", 1)[0]
+        self.assertIn("push:\n", check_triggers)
+        self.assertIn("pull_request:\n", check_triggers)
+        self.assertIn("workflow_dispatch:\n", check_triggers)
+        self.assertNotIn("concurrency:", checks.split("\njobs:\n", 1)[0])
+        self.assertIn(
+            "group: checks-${{ github.workflow }}-${{ github.ref }}", checks
+        )
+        self.assertIn(
+            "manager_release:\n    name: Manager release\n    needs: checks", checks
+        )
+        self.assertIn("github.event_name == 'push' ||", checks)
+        self.assertIn(
+            "github.ref_name == github.event.repository.default_branch", checks
+        )
+        self.assertIn("uses: ./.github/workflows/manager-release.yml", checks)
+        self.assertIn(
+            "permissions:\n      attestations: write\n      contents: write\n"
+            "      id-token: write\n    uses:",
+            checks,
         )
         self.assertIn(flutter_action, checks)
         self.assertNotIn("actions/cache@v2", checks)
