@@ -195,8 +195,18 @@ class ManagerPackageTests(unittest.TestCase):
         controller_installer = (
             REPO_ROOT / "scripts/install-update-controller.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn("systemctl reset-failed", controller_installer)
         self.assertIn("s4lockdown-update-manager-check.service", controller_installer)
+
+    def test_controller_resets_only_units_that_are_failed(self) -> None:
+        installer = (REPO_ROOT / "scripts/install-update-controller.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'if systemctl is-failed --quiet "$unit"; then',
+            installer,
+        )
+        self.assertIn('systemctl reset-failed "$unit"', installer)
+        self.assertNotIn("systemctl reset-failed \\\n", installer)
 
     def test_package_retry_resumes_configuration_when_archives_are_installed(self) -> None:
         installer = (REPO_ROOT / "scripts" / "install-signed-packages.sh").read_text(

@@ -98,6 +98,10 @@
   extraction directory, and systemd otherwise returns `ENOSYS` for those calls.
   Keep the check user unprivileged, retain `NoNewPrivileges` and filesystem
   isolation, and never execute extracted files.
+- During controller installation, call `systemctl reset-failed` only for units
+  that `systemctl is-failed --quiet` confirms are failed. A newly installed
+  static unit can have a valid unit file without being loaded, and an
+  unconditional reset then aborts Debian package configuration under `set -e`.
 - Keep updater downloads in the unprivileged check service. Before root package
   processing, copy every staged asset into a newly created root-owned inode,
   remove the unprivileged source, and repeat both Manifest and package signature
