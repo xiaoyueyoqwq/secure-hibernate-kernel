@@ -180,6 +180,8 @@ class ManagerController extends ChangeNotifier {
   Future<void>? _activeManagerUpdateCheck;
   Future<ManagerActionResult>? _activeKernelCheckStart;
   Future<void>? _activeKernelCheckMonitor;
+  Timer? _kernelCheckPollTimer;
+  Completer<void>? _kernelCheckPollWait;
   bool _startupMokInspectionAttempted = false;
   bool _startupKernelCheckAttempted = false;
 
@@ -534,7 +536,7 @@ class ManagerController extends ChangeNotifier {
     var inactivePollsRemaining = _kernelCheckInactiveGracePolls;
     var consecutiveReadFailures = 0;
     while (!_disposed && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(_kernelCheckPollInterval);
+      await _waitForKernelCheckPoll();
       if (_disposed) return;
       try {
         await refreshSnapshot();
@@ -568,6 +570,29 @@ class ManagerController extends ChangeNotifier {
     if (!_disposed) {
       addLog('[Warning] Kernel update check status monitoring timed out');
     }
+  }
+
+  Future<void> _waitForKernelCheckPoll() {
+    final wait = Completer<void>();
+    late final Timer timer;
+    timer = Timer(_kernelCheckPollInterval, () {
+      if (identical(_kernelCheckPollTimer, timer)) {
+        _kernelCheckPollTimer = null;
+        _kernelCheckPollWait = null;
+      }
+      wait.complete();
+    });
+    _kernelCheckPollTimer = timer;
+    _kernelCheckPollWait = wait;
+    return wait.future;
+  }
+
+  void _cancelKernelCheckPoll() {
+    _kernelCheckPollTimer?.cancel();
+    _kernelCheckPollTimer = null;
+    final wait = _kernelCheckPollWait;
+    _kernelCheckPollWait = null;
+    if (wait != null && !wait.isCompleted) wait.complete();
   }
 
   Future<void> openManagerUpdateRelease() async {
@@ -860,6 +885,7 @@ class ManagerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _cancelKernelCheckPoll();
     for (final timer in _noticeTimers.values) {
       timer.cancel();
     }
