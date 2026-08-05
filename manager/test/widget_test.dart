@@ -42,6 +42,8 @@ UpdateControllerStatus testUpdaterStatus({
   int? totalBytes,
   String? checkFailedPhase,
   String? lastCheckError,
+  String? installedKernelRelease,
+  bool rebootRequired = false,
 }) =>
     UpdateControllerStatus(
       controllerInstalled: true,
@@ -51,8 +53,8 @@ UpdateControllerStatus testUpdaterStatus({
       availableSourceVersion: null,
       availableKernelRelease: null,
       installedSourceVersion: null,
-      installedKernelRelease: null,
-      rebootRequired: false,
+      installedKernelRelease: installedKernelRelease,
+      rebootRequired: rebootRequired,
       timerEnabled: true,
       timerActive: true,
       nextCheckAt: null,
@@ -844,6 +846,67 @@ void main() {
     expect(collapsed.label, isEmpty);
     expect(collapsed.selected, isFalse);
     expect(collapsed.tone, ButtonTone.ghost);
+  });
+
+  testWidgets('next boot kernel is not presented as a removable fallback',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final manager = ManagerController(translations);
+    addTearDown(manager.dispose);
+    manager.kernels = const [
+      KernelInfo(
+        id: 'running',
+        version: '7.0.12-ubuntu28-s4lockdown',
+        project: true,
+        status: KernelStatus.active,
+      ),
+      KernelInfo(
+        id: 'previous',
+        version: '7.0.12-s4lockdown',
+        project: true,
+        status: KernelStatus.installed,
+      ),
+      KernelInfo(
+        id: 'next',
+        version: '7.0.12-29-hibernate',
+        project: true,
+        status: KernelStatus.installed,
+      ),
+    ];
+    manager.updater = testUpdaterStatus(
+      status: 'installed-reboot-required',
+      installedKernelRelease: '7.0.12-29-hibernate',
+      rebootRequired: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: ManagerScope(
+          controller: manager,
+          child: const SingleChildScrollView(child: KernelsPage()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final pending = find.byKey(
+      const ValueKey('pending-kernel-7.0.12-29-hibernate'),
+    );
+    final fallback = find.byKey(
+      const ValueKey('fallback-kernel-7.0.12-s4lockdown'),
+    );
+    expect(pending, findsOneWidget);
+    expect(fallback, findsOneWidget);
+    expect(
+      find.descendant(of: pending, matching: find.byIcon(LucideIcons.trash2)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: fallback, matching: find.byIcon(LucideIcons.trash2)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('manager surface keeps one fixed frame across pages',

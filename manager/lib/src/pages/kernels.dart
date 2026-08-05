@@ -65,8 +65,21 @@ class _KernelsPageState extends State<KernelsPage> {
     final manager = context.manager;
     final t = context.t;
     final active = manager.activeKernel;
+    final pendingKernel = manager.updater.rebootRequired
+        ? manager.kernels
+            .where(
+              (kernel) =>
+                  kernel.status == KernelStatus.installed &&
+                  kernel.version == manager.updater.installedKernelRelease,
+            )
+            .firstOrNull
+        : null;
     final installed = manager.kernels
-        .where((kernel) => kernel.status == KernelStatus.installed)
+        .where(
+          (kernel) =>
+              kernel.status == KernelStatus.installed &&
+              kernel.version != pendingKernel?.version,
+        )
         .toList();
     final available = manager.kernels
         .where((kernel) => kernel.status == KernelStatus.available)
@@ -145,11 +158,30 @@ class _KernelsPageState extends State<KernelsPage> {
                     ? t.text('kernels.projectActive')
                     : t.text('kernels.officialActive'),
           ),
+          if (pendingKernel != null) ...[
+            const SizedBox(height: 32),
+            SectionTitle(t.text('kernels.pendingRestart')),
+            const SizedBox(height: 16),
+            StatusRow(
+              key: ValueKey('pending-kernel-${pendingKernel.version}'),
+              label: t.text('kernels.nextBootKernel'),
+              value: Text(
+                pendingKernel.version,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                ),
+              ),
+              status: StatusKind.warning,
+              description: t.text('kernels.pendingRestartDescription'),
+            ),
+          ],
           const SizedBox(height: 32),
           SectionTitle(t.text('kernels.installedFallbacks')),
           const SizedBox(height: 16),
           for (var index = 0; index < installed.length; index++) ...[
             StatusRow(
+              key: ValueKey('fallback-kernel-${installed[index].version}'),
               label: installed[index].project
                   ? t.text('kernels.projectKernel')
                   : t.text('kernels.ubuntuKernel'),

@@ -114,6 +114,11 @@
   installed kernel, the running kernel, every official Ubuntu kernel, and the
   HWE meta-package. Never restart automatically; preserve dpkg contention as a
   deferred state and change GRUB only after package installation succeeds.
+- Before restart, present the installed project kernel selected for the next
+  boot separately from rollback kernels and expose no removal action for it.
+  The root Helper must independently reject removal of the project release in
+  the trusted `GRUB_TOP_LEVEL` configuration; UI classification is not a safety
+  boundary.
 - Name every root-owned trust-boundary directory explicitly in installer calls;
   automatically created parent directories can inherit a broader default mode.
 - The Manager UI may refresh typed read-only snapshots but must never

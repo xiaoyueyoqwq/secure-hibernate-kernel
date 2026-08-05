@@ -983,6 +983,32 @@ class ManagerHelperTests(unittest.TestCase):
             with self.assertRaisesRegex(helper.HelperError, "other project kernel"):
                 helper.action_remove_kernel(release)
 
+    def test_kernel_removal_rejects_the_grub_selected_release(self) -> None:
+        release = "7.0.12-29-hibernate"
+        with patch.object(
+            helper.os, "uname", return_value=SimpleNamespace(release="other")
+        ), patch.object(
+            helper, "configured_grub_top_level_release", return_value=release
+        ), patch.object(helper, "installed_kernel_packages") as installed:
+            with self.assertRaisesRegex(
+                helper.HelperError, "selected for the next boot"
+            ):
+                helper.action_remove_kernel(release)
+        installed.assert_not_called()
+
+    def test_grub_selected_release_uses_the_fixed_project_config(self) -> None:
+        release = "7.0.12-29-hibernate"
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "99-s4lockdown.cfg"
+            config.write_text(
+                f'GRUB_DEFAULT="simple"\nGRUB_TOP_LEVEL="/boot/vmlinuz-{release}"\n',
+                encoding="ascii",
+            )
+            with patch.object(
+                helper, "GRUB_PROJECT_CONFIG_PATH", config
+            ), patch.object(helper, "require_trusted_file"):
+                self.assertEqual(helper.configured_grub_top_level_release(), release)
+
     def test_kernel_removal_never_counts_headers_as_official_fallback(self) -> None:
         release = "7.0.12-ubuntu28-s4lockdown"
         packages = {

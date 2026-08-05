@@ -36,6 +36,7 @@ UPDATE_TOOL = INSTALL_ROOT / "scripts/update-local.sh"
 SYSTEM_CONFIG_TOOL = INSTALL_ROOT / "scripts/install-system-config.sh"
 CHECK_UNIT = "s4lockdown-update-manager-check.service"
 CONFIG_PATH = Path("/etc/s4lockdown-update.conf")
+GRUB_PROJECT_CONFIG_PATH = Path("/etc/default/grub.d/99-s4lockdown.cfg")
 FSTAB_PATH = Path("/etc/fstab")
 ROOT_STATE_PATH = Path("/var/lib/s4lockdown-update/state.json")
 CHECK_STATE_PATH = Path("/var/cache/s4lockdown-update/check-state.json")
@@ -1156,11 +1157,35 @@ def installed_kernel_packages() -> dict[str, list[str]]:
     return releases
 
 
+def configured_grub_top_level_release() -> str | None:
+    try:
+        GRUB_PROJECT_CONFIG_PATH.lstat()
+    except FileNotFoundError:
+        return None
+    require_trusted_file(GRUB_PROJECT_CONFIG_PATH)
+    try:
+        source = GRUB_PROJECT_CONFIG_PATH.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as error:
+        raise HelperError(
+            f"Could not read project GRUB configuration: {error}"
+        ) from error
+    matches = re.findall(
+        r'^GRUB_TOP_LEVEL="/boot/vmlinuz-([^"\n]+)"$', source, re.MULTILINE
+    )
+    if len(matches) != 1 or not PROJECT_RELEASE.fullmatch(matches[0]):
+        raise HelperError(
+            "Project GRUB configuration has an invalid top-level kernel"
+        )
+    return matches[0]
+
+
 def action_remove_kernel(release: str) -> dict[str, Any]:
     if not PROJECT_RELEASE.fullmatch(release):
         raise HelperError("Only an exact project-kernel release may be removed")
     if release == os.uname().release:
         raise HelperError("The running kernel cannot be removed")
+    if release == configured_grub_top_level_release():
+        raise HelperError("The kernel selected for the next boot cannot be removed")
     releases = installed_kernel_packages()
     packages = releases.get(release, [])
     if not packages or f"linux-image-{release}" not in packages:
