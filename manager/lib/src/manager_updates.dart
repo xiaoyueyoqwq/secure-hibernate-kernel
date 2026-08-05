@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 const managerCurrentVersion = String.fromEnvironment(
   'MANAGER_VERSION',
-  defaultValue: '1.0.0+34',
+  defaultValue: '1.0.0+35',
 );
 
 const _releaseApiUrl =
