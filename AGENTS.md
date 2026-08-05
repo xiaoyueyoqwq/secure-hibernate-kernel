@@ -178,11 +178,13 @@
   installed project DER against its pinned SHA-256 fingerprint, then require
   its exact SHA-1 fingerprint in `mokutil --list-enrolled` before reporting the
   project MOK as enrolled.
-- On native Manager startup, request one fixed `inspect-mok` operation after
-  the first frame unless another MOK inspection has already started. Share one
-  in-flight inspection across startup, wizard recovery, and page actions so
-  concurrent paths cannot open duplicate Polkit prompts; render authorization
-  wait as checking, while cancellation remains unknown and retryable.
+- On native Manager startup, when automatic kernel checking is enabled, use one
+  fixed Helper action and one Polkit authorization to inspect the project MOK
+  and start the fixed Manager check unit in that order. Share its in-flight MOK
+  and check results with startup, wizard recovery, and page callers so
+  concurrent paths cannot open duplicate prompts. Render authorization wait as
+  checking, while cancellation remains unknown and retryable. Keep explicit
+  manual MOK and kernel checks as separate fixed actions.
 - Generate new MokManager one-time passwords as three lowercase letters plus
   five digits, excluding ambiguous `i/l/o/0/1` characters. Continue accepting
   the legacy 12-character alphanumeric format while an older enrollment request
