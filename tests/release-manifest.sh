@@ -4,6 +4,13 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 temp_dir=$(mktemp -d)
 trap 'rm -rf -- "$temp_dir"' EXIT
+workflow_file="$repo_root/.github/workflows/build.yml"
+if grep -Fq '$(< release/kernel-release.txt)' "$workflow_file" ||
+	! grep -Fq 'kernel_release=$(cat release/kernel-release.txt)' "$workflow_file"; then
+	printf 'The signing workflow must read kernel metadata with POSIX shell syntax.\n' >&2
+	exit 1
+fi
+
 mock_repo="$temp_dir/repo"
 release_dir="$temp_dir/release"
 source_version=7.0.0-29.29

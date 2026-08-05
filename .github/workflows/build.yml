@@ -204,7 +204,7 @@ jobs:
           find dist/signed -maxdepth 1 -type f -exec cp -v {} release/ \;
           cp -v certs/secure-hibernate-project.der \
             certs/secure-hibernate-project.pem release/
-          kernel_release=$(< release/kernel-release.txt)
+          kernel_release=$(cat release/kernel-release.txt)
           scripts/release-manifest.py create release \
             --source-version "$SOURCE_PACKAGE_VERSION" \
             --kernel-release "$kernel_release" \
