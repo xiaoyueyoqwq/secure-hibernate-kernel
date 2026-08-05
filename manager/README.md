@@ -70,9 +70,11 @@ flutter pub get
 ./scripts/dev.sh
 ```
 
-The wrapper installs a user-level development desktop entry and icon under the
-production application ID, then replaces itself with `flutter run -d linux`.
-Stop it with `q` or `Ctrl+C`. Remove the development desktop identity with:
+The wrapper removes desktop artifacts left by older development scripts, then
+replaces itself with `flutter run -d linux`. It does not install a development
+launcher, so an installed Debian package keeps ownership of the production
+desktop identity. Stop the development process with `q` or `Ctrl+C`. To remove
+older development desktop artifacts without launching Flutter, run:
 
 ```bash
 ./scripts/uninstall-dev-desktop.sh

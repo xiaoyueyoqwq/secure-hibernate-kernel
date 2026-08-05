@@ -115,6 +115,11 @@
   `io.github.xiaoyueyoqwq.secure-hibernate-manager.desktop` and keep the
   installed `.desktop` base filename identical. GNOME Wayland uses this match
   to group the Flutter window and resolve its Dock icon.
+- A user-level Manager `.desktop` file with the production base filename
+  shadows the Debian package entry in `/usr/share/applications`. Development
+  launchers must not persist under the production desktop ID; use a distinct
+  development application/desktop identity or remove the temporary entry when
+  the development session ends.
 - Manager raw diagnostics may preserve output only from fixed, read-only native
   backend preflight sources. Never accept UI-provided commands or include
   private keys, credentials, LUKS passphrases, or TPM key material.

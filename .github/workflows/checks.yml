@@ -42,14 +42,15 @@ jobs:
 
       - name: Check scripts and units
         run: |
-          shellcheck scripts/*.sh tests/*.sh \
+          shellcheck scripts/*.sh manager/scripts/*.sh tests/*.sh \
             config/systemd/s4lockdown-grub-reboot \
             config/grub/11_s4lockdown_resume
-          bash -n scripts/*.sh tests/*.sh \
+          bash -n scripts/*.sh manager/scripts/*.sh tests/*.sh \
             config/systemd/s4lockdown-grub-reboot \
             config/grub/11_s4lockdown_resume
           tests/grub-resume.sh
           python3 tests/manager-release.py
+          tests/manager-dev.sh
           tests/release-decision.sh
           tests/release-manifest.sh
           tests/resolve-version.sh
