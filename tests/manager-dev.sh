@@ -11,11 +11,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+unprivileged_uid=$(id -u nobody 2>/dev/null || printf '65534\n')
+unprivileged_gid=$(id -g nobody 2>/dev/null || printf '65534\n')
+
+run_dev_script() {
+	if (( EUID == 0 )); then
+		# Container checks run as root, but dev.sh requires the desktop user.
+		setpriv --reuid="$unprivileged_uid" --regid="$unprivileged_gid" \
+			--clear-groups -- "$@"
+	else
+		"$@"
+	fi
+}
+
 fake_bin=$temporary_root/bin
 data_root=$temporary_root/data
 applications_directory=$data_root/applications
 icon_directory=$data_root/icons/hicolor/256x256/apps
 mkdir -p -- "$fake_bin" "$applications_directory" "$icon_directory"
+if (( EUID == 0 )); then
+	chmod 0777 "$temporary_root"
+	chmod -R a+rwX "$fake_bin" "$data_root"
+fi
 
 cat >"$fake_bin/flutter" <<'EOF'
 #!/usr/bin/env bash
@@ -34,8 +51,8 @@ EOF
 cp -- "$repo_root/manager/linux/resources/app-icon.png" "$icon_target"
 
 result=$temporary_root/flutter-result
-PATH=$fake_bin:/usr/bin:/bin XDG_DATA_HOME=$data_root FLUTTER_TEST_RESULT=$result \
-	"$dev_script"
+run_dev_script env PATH=$fake_bin:/usr/bin:/bin XDG_DATA_HOME=$data_root \
+	FLUTTER_TEST_RESULT=$result "$dev_script"
 
 [[ ! -e $desktop_target ]]
 [[ ! -e $icon_target ]]
@@ -46,13 +63,13 @@ mapfile -t invocation <"$result"
 [[ ${invocation[3]} == linux ]]
 
 printf '%s\n' '[Desktop Entry]' 'Name=User override' >"$desktop_target"
-PATH=$fake_bin:/usr/bin:/bin XDG_DATA_HOME=$data_root FLUTTER_TEST_RESULT=$result \
-	"$dev_script" 2>"$temporary_root/warning"
+run_dev_script env PATH=$fake_bin:/usr/bin:/bin XDG_DATA_HOME=$data_root \
+	FLUTTER_TEST_RESULT=$result "$dev_script" 2>"$temporary_root/warning"
 
 [[ -f $desktop_target ]]
 grep -Fq 'preserving unrecognized user desktop entry' "$temporary_root/warning"
 
-if rg -q 'mv -f|install -m 0644|> *"?\$desktop_target' "$dev_script"; then
+if grep -Eq 'mv -f|install -m 0644|> *"*\$desktop_target' "$dev_script"; then
 	printf 'Development script must not install a desktop entry.\n' >&2
 	exit 1
 fi
