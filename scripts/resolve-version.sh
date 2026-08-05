@@ -6,7 +6,7 @@ usage() {
 Usage: resolve-version.sh [SOURCE_PACKAGE_VERSION|auto] [LOCAL_VERSION|auto]
 
 With "auto", resolves the current Ubuntu HWE kernel source version and derives
-an ABI-specific local suffix such as -ubuntu28-s4lockdown.
+an ABI-specific local suffix such as -28-hibernate.
 EOF
 }
 
@@ -61,7 +61,7 @@ abi_version="${source_name}-${abi_number}"
 local_version=$requested_local
 
 if [[ $local_version == auto ]]; then
-	local_version="-ubuntu${abi_number}-s4lockdown"
+	local_version="-${abi_number}-hibernate"
 fi
 if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
 	printf 'LOCAL_VERSION must begin with "-" and contain package-safe characters.\n' >&2

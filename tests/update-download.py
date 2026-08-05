@@ -66,28 +66,34 @@ class UpdateDownloadTests(unittest.TestCase):
 
     def test_pruning_preserves_target_running_and_requested_history(self) -> None:
         releases = {
-            "7.0.15-ubuntu31-s4lockdown": [
-                "linux-image-7.0.15-ubuntu31-s4lockdown",
-                "linux-headers-7.0.15-ubuntu31-s4lockdown",
+            "7.0.15-31-hibernate": [
+                "linux-image-7.0.15-31-hibernate",
+                "linux-headers-7.0.15-31-hibernate",
             ],
-            "7.0.14-ubuntu30-s4lockdown": [
-                "linux-image-7.0.14-ubuntu30-s4lockdown",
-                "linux-headers-7.0.14-ubuntu30-s4lockdown",
+            "7.0.14-30-hibernate": [
+                "linux-image-7.0.14-30-hibernate",
+                "linux-headers-7.0.14-30-hibernate",
             ],
-            "7.0.13-ubuntu29-s4lockdown": [
-                "linux-image-7.0.13-ubuntu29-s4lockdown",
-                "linux-headers-7.0.13-ubuntu29-s4lockdown",
+            "7.0.13-29-hibernate": [
+                "linux-image-7.0.13-29-hibernate",
+                "linux-headers-7.0.13-29-hibernate",
             ],
-            "7.0.12-ubuntu28-s4lockdown": [
-                "linux-image-7.0.12-ubuntu28-s4lockdown",
-                "linux-headers-7.0.12-ubuntu28-s4lockdown",
+            "7.0.12-28-hibernate": [
+                "linux-image-7.0.12-28-hibernate",
+                "linux-headers-7.0.12-28-hibernate",
             ],
         }
         commands = []
 
         def compare(left: str, right: str) -> int:
-            left_abi = int(left.split("ubuntu", 1)[1].split("-", 1)[0])
-            right_abi = int(right.split("ubuntu", 1)[1].split("-", 1)[0])
+            def abi(value: str) -> int:
+                middle = value.split("-", 1)[1]
+                if middle.startswith("ubuntu"):
+                    middle = middle[len("ubuntu"):]
+                return int(middle.split("-", 1)[0])
+
+            left_abi = abi(left)
+            right_abi = abi(right)
             return -1 if left_abi > right_abi else 1 if left_abi < right_abi else 0
 
         with patch.object(
@@ -98,18 +104,18 @@ class UpdateDownloadTests(unittest.TestCase):
             updater, "run", side_effect=lambda command, **_kwargs: commands.append(command)
         ):
             removed = updater.prune_project_kernels(
-                "7.0.15-ubuntu31-s4lockdown",
+                "7.0.15-31-hibernate",
                 1,
-                "7.0.12-ubuntu28-s4lockdown",
+                "7.0.12-28-hibernate",
                 testing=False,
             )
 
-        self.assertEqual(removed, ["7.0.13-ubuntu29-s4lockdown"])
+        self.assertEqual(removed, ["7.0.13-29-hibernate"])
         self.assertEqual(commands[-1], ["/usr/sbin/update-grub"])
         self.assertEqual(commands[0][0:2], ["dpkg", "--remove"])
-        self.assertIn("linux-image-7.0.13-ubuntu29-s4lockdown", commands[0])
-        self.assertNotIn("linux-image-7.0.12-ubuntu28-s4lockdown", commands[0])
-        self.assertNotIn("linux-image-7.0.14-ubuntu30-s4lockdown", commands[0])
+        self.assertIn("linux-image-7.0.13-29-hibernate", commands[0])
+        self.assertNotIn("linux-image-7.0.12-28-hibernate", commands[0])
+        self.assertNotIn("linux-image-7.0.14-30-hibernate", commands[0])
 
     def legacy_api_document(self) -> dict[str, object]:
         assets = []
@@ -161,11 +167,27 @@ class UpdateDownloadTests(unittest.TestCase):
 
             self.assertEqual(target.read_text(encoding="ascii"), "unchanged")
 
+    def test_project_kernel_detection_accepts_current_and_legacy_suffixes(self) -> None:
+        for release in (
+            "7.0.12-28-hibernate",
+            "7.0.12-ubuntu28-s4lockdown",
+            "7.0.12-s4lockdown",
+        ):
+            with self.subTest(release=release):
+                self.assertTrue(updater.is_project_kernel(release))
+        for release in (
+            "7.0.0-28-generic",
+            "7.0.12",
+            "7.0.12-28-hibernation",
+        ):
+            with self.subTest(release=release):
+                self.assertFalse(updater.is_project_kernel(release))
+
     def test_release_verification_reports_real_phase_order(self) -> None:
         phases = []
         manifest = {
             "ubuntu_source_package_version": "7.0.0-29.29",
-            "kernel_release": "7.0.12-ubuntu29-s4lockdown",
+            "kernel_release": "7.0.13-29-hibernate",
         }
         with patch.object(updater, "run"), patch.object(
             updater, "read_json", return_value=manifest

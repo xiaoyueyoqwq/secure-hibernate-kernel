@@ -20,17 +20,17 @@ assert_output() {
 assert_output \
 	7.0.0-28.28 \
 	7.0.0-28 \
-	-ubuntu28-s4lockdown \
+	-28-hibernate \
 	ubuntu-7.0.0-28.28
 assert_output \
 	6.14.0-37.37~24.04.1 \
 	6.14.0-37 \
-	-ubuntu37-s4lockdown \
+	-37-hibernate \
 	ubuntu-6.14.0-37.37_24.04.1
 assert_output \
 	7.0.0-29.31 \
 	7.0.0-29 \
-	-ubuntu29-s4lockdown \
+	-29-hibernate \
 	ubuntu-7.0.0-29.31
 
 if "$resolver" 7.0-28.28 auto >/dev/null 2>&1; then

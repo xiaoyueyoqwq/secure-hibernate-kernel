@@ -22,7 +22,7 @@ from typing import Any, Sequence
 
 SCHEMA_VERSION = 1
 PROJECT_FINGERPRINT = "5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11"
-PROJECT_RELEASE = re.compile(r"^[0-9][0-9A-Za-z.+~-]*-s4lockdown$")
+PROJECT_RELEASE = re.compile(r"^[0-9][0-9A-Za-z.+~-]*-(?:s4lockdown|hibernate)$")
 MOK_PASSWORD_PATTERN = re.compile(r"[a-z]{3}[0-9]{5}")
 LEGACY_MOK_PASSWORD_PATTERN = re.compile(r"[A-Za-z0-9]{12}")
 STORED_MOK_PASSWORD_PATTERN = re.compile(r"(?:[a-z]{3}[0-9]{5}|[A-Za-z0-9]{12})")
@@ -1033,7 +1033,7 @@ def require_project_boot() -> str:
         raise HelperError("Kernel Lockdown is not active")
     packages = installed_kernel_packages()
     if not any(
-        not release_name.endswith("-s4lockdown")
+        not release_name.endswith(("-s4lockdown", "-hibernate"))
         and f"linux-image-{release_name}" in names
         for release_name, names in packages.items()
     ):
@@ -1161,11 +1161,13 @@ def action_remove_kernel(release: str) -> dict[str, Any]:
         raise HelperError(f"Project kernel is not installed: {release}")
     project_releases = [
         value for value, names in releases.items()
-        if value.endswith("-s4lockdown") and f"linux-image-{value}" in names
+        if value.endswith(("-s4lockdown", "-hibernate"))
+        and f"linux-image-{value}" in names
     ]
     official_releases = [
         value for value, names in releases.items()
-        if not value.endswith("-s4lockdown") and f"linux-image-{value}" in names
+        if not value.endswith(("-s4lockdown", "-hibernate"))
+        and f"linux-image-{value}" in names
     ]
     if len(project_releases) < 2:
         raise HelperError("At least one other project kernel must remain installed")
@@ -1176,7 +1178,10 @@ def action_remove_kernel(release: str) -> dict[str, Any]:
     remaining = installed_kernel_packages()
     if release in remaining:
         raise HelperError(f"Kernel packages remain installed after removal: {release}")
-    if not any(not value.endswith("-s4lockdown") for value in remaining):
+    if not any(
+        not value.endswith(("-s4lockdown", "-hibernate"))
+        for value in remaining
+    ):
         raise HelperError("Official Ubuntu fallback disappeared after kernel removal")
     return {"removedRelease": release, "removedPackages": sorted(packages), **command_output(result)}
 

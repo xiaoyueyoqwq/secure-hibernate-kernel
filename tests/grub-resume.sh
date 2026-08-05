@@ -20,7 +20,7 @@ if grep -Eq '^set -[^ ]*u' "$generator"; then
 	exit 1
 fi
 
-kernel_release=7.0.12-ubuntu28-s4lockdown
+kernel_release=7.0.12-28-hibernate
 kernel_id="gnulinux-${kernel_release}-advanced-test-root"
 cat > "$temp_dir/grub.cfg" <<EOF
 submenu 'Advanced options' --id 'gnulinux-advanced-test-root' {

@@ -144,10 +144,10 @@ run_update() {
 }
 
 release_29=$(create_release \
-	7.0.0-29.29 7.0.13-ubuntu29-s4lockdown -ubuntu29-s4lockdown \
+	7.0.0-29.29 7.0.13-29-hibernate -29-hibernate \
 	1111111111111111111111111111111111111111)
 release_30=$(create_release \
-	7.0.0-30.30 7.0.14-ubuntu30-s4lockdown -ubuntu30-s4lockdown \
+	7.0.0-30.30 7.0.14-30-hibernate -30-hibernate \
 	2222222222222222222222222222222222222222)
 expected_source_version=7.0.0-29.29
 
@@ -195,7 +195,7 @@ run_update install >/dev/null
 [[ $(json_value "$state_file" install_progress) == 100 ]]
 [[ $(json_value "$state_file" installed_source_version) == 7.0.0-29.29 ]]
 [[ -f $test_root/run/reboot-required ]]
-grep -Fxq linux-image-7.0.13-ubuntu29-s4lockdown \
+grep -Fxq linux-image-7.0.13-29-hibernate \
 	"$test_root/run/reboot-required.pkgs"
 grep -q '^install ' "$temp_dir/package.log"
 [[ ! -d $test_root/var/lib/s4lockdown-update/available ]]

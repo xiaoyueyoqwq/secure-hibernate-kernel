@@ -62,7 +62,7 @@ fi
 systemctl daemon-reload
 
 running_kernel=$(uname -r)
-if [[ $running_kernel == *-s4lockdown ]]; then
+if [[ $running_kernel == *-s4lockdown || $running_kernel == *-hibernate ]]; then
 	dracut --force "/boot/initrd.img-$running_kernel" "$running_kernel"
 fi
 

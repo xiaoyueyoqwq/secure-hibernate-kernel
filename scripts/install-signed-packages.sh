@@ -42,7 +42,8 @@ for command in "${required_commands[@]}"; do
 done
 
 mapfile -t image_packages < <(find "$signed_dir" -maxdepth 1 -type f \
-	-name 'signed-linux-image-*-s4lockdown_*_amd64.deb' -print)
+	\( -name 'signed-linux-image-*-s4lockdown_*_amd64.deb' -o \
+		-name 'signed-linux-image-*-hibernate_*_amd64.deb' \) -print)
 if (( ${#image_packages[@]} != 1 )); then
 	printf 'Expected exactly one signed hibernation image package in %s.\n' "$signed_dir" >&2
 	exit 1

@@ -90,14 +90,14 @@ class ManagerController extends ChangeNotifier {
       snapshotLoaded = true;
       kernels = const [
         KernelInfo(
-          id: 'installed-7.0.12-ubuntu28-s4lockdown',
-          version: '7.0.12-ubuntu28-s4lockdown',
+          id: 'installed-7.0.12-28-hibernate',
+          version: '7.0.12-28-hibernate',
           project: true,
           status: KernelStatus.active,
         ),
         KernelInfo(
-          id: 'installed-7.0.12-s4lockdown',
-          version: '7.0.12-s4lockdown',
+          id: 'installed-7.0.12-ubuntu28-s4lockdown',
+          version: '7.0.12-ubuntu28-s4lockdown',
           project: true,
           status: KernelStatus.installed,
         ),

@@ -6,7 +6,7 @@ void main() {
   test('accepts running Linux kernel releases at or above 7.0.0', () {
     expect(kernelReleaseMeetsMinimum('7.0.0-generic'), isTrue);
     expect(
-      kernelReleaseMeetsMinimum('7.0.12-ubuntu28-s4lockdown'),
+      kernelReleaseMeetsMinimum('7.0.12-28-hibernate'),
       isTrue,
     );
     expect(kernelReleaseMeetsMinimum('7.1.0-custom'), isTrue);

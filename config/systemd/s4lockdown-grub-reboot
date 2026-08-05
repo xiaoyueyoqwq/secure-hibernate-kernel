@@ -52,8 +52,8 @@ main() {
 		return 1
 	}
 	kernel_release=$(uname -r)
-	if [[ $kernel_release != *-s4lockdown ]]; then
-		printf 'Refusing hibernation from non-s4lockdown kernel %s\n' \
+	if [[ $kernel_release != *-s4lockdown && $kernel_release != *-hibernate ]]; then
+		printf 'Refusing hibernation from a kernel without the project suffix: %s\n' \
 			"$kernel_release" >&2
 		return 1
 	fi

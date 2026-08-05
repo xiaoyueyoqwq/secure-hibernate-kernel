@@ -20,8 +20,8 @@ if (( EUID != 0 )); then
 fi
 
 kernel_release=$1
-if [[ $kernel_release != *-s4lockdown ]]; then
-	printf 'Refusing a kernel without the -s4lockdown suffix: %s\n' "$kernel_release" >&2
+if [[ $kernel_release != *-s4lockdown && $kernel_release != *-hibernate ]]; then
+	printf 'Refusing a kernel without the project suffix: %s\n' "$kernel_release" >&2
 	exit 2
 fi
 if [[ ! -f /boot/vmlinuz-$kernel_release || ! -f /boot/initrd.img-$kernel_release ]]; then

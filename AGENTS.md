@@ -84,6 +84,11 @@
 - `ubuntu-7.0.0-28.28` is the only legacy Release allowed without a signed
   Manifest. Do not add assets to it; every later tag requires both
   `release-manifest.json` and `release-manifest.p7s`.
+- Kernel releases are named `<upstream>-<abi>-hibernate`, mirroring the Ubuntu
+  `<version>-<abi>-<flavor>` layout (e.g. `7.0.12-28-hibernate`). Only new
+  Release generation uses this form; `-ubuntu<N>-s4lockdown` remains the
+  immutable kernel name of the published `ubuntu-7.0.0-28.28` first Release.
+  Detection code (updater, Manager, GRUB, installer) must accept both suffixes.
 - Automatic first installation from `ubuntu-7.0.0-28.28` must remain limited to
   the canonical repository and an embedded exact commit, asset-name, size, and
   SHA-256 snapshot. Repeat this verification on both sides of the root copy

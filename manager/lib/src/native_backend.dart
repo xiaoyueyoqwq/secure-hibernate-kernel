@@ -15,9 +15,13 @@ const _projectFingerprint =
     '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
     'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11';
 
-final _projectReleasePattern = RegExp(r'^[0-9][0-9A-Za-z.+~-]*-s4lockdown$');
+final _projectReleasePattern =
+    RegExp(r'^[0-9][0-9A-Za-z.+~-]*-(?:s4lockdown|hibernate)$');
 final _sourceVersionPattern = RegExp(r'^[0-9][0-9A-Za-z.+:~-]*$');
 final _fingerprintPattern = RegExp(r'^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$');
+
+bool _isProjectRelease(String release) =>
+    release.endsWith('-s4lockdown') || release.endsWith('-hibernate');
 
 class CommandResult {
   const CommandResult({
@@ -628,7 +632,7 @@ class NativeManagerBackend implements ManagerBackend {
           KernelInfo(
             id: 'running-$activeRelease',
             version: activeRelease,
-            project: activeRelease.contains('s4lockdown'),
+            project: _isProjectRelease(activeRelease),
             status: KernelStatus.active,
           ),
         ],
@@ -979,7 +983,7 @@ class NativeManagerBackend implements ManagerBackend {
       kernels.add(KernelInfo(
         id: 'installed-$release',
         version: release,
-        project: release.contains('s4lockdown'),
+        project: _isProjectRelease(release),
         status: release == activeRelease
             ? KernelStatus.active
             : KernelStatus.installed,
@@ -989,7 +993,7 @@ class NativeManagerBackend implements ManagerBackend {
       kernels.add(KernelInfo(
         id: 'running-$activeRelease',
         version: activeRelease,
-        project: activeRelease.contains('s4lockdown'),
+        project: _isProjectRelease(activeRelease),
         status: KernelStatus.active,
       ));
     }

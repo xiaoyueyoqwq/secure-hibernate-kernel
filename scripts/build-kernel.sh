@@ -32,7 +32,7 @@ fi
 abi_version="${source_name}-${abi_number}"
 
 if [[ $local_version == auto ]]; then
-	local_version="-ubuntu${abi_number}-s4lockdown"
+	local_version="-${abi_number}-hibernate"
 fi
 
 if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then

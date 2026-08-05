@@ -100,7 +100,7 @@ class ManagerHelperTests(unittest.TestCase):
         command = Mock(side_effect=AssertionError("no mutation command may run"))
         with patch.multiple(
             helper,
-            require_project_boot=Mock(return_value="7.0.12-ubuntu28-s4lockdown"),
+            require_project_boot=Mock(return_value="7.0.12-28-hibernate"),
             root_luks_entry=Mock(return_value=("cryptroot", device)),
             luks_metadata=Mock(return_value={"tokens": {}}),
             inspect_tpm_tokens=Mock(return_value=[]),
@@ -125,7 +125,7 @@ class ManagerHelperTests(unittest.TestCase):
         configure = Mock()
         with patch.multiple(
             helper,
-            require_project_boot=Mock(return_value="7.0.12-ubuntu28-s4lockdown"),
+            require_project_boot=Mock(return_value="7.0.12-28-hibernate"),
             root_luks_entry=Mock(return_value=("cryptroot", device)),
             luks_metadata=Mock(return_value={"tokens": {"0": {"type": "systemd-tpm2"}}}),
             inspect_tpm_tokens=Mock(return_value=[{"tokenId": "0", "passed": True}]),
@@ -629,7 +629,7 @@ class ManagerHelperTests(unittest.TestCase):
         configuration = Mock(return_value=False)
         with patch.multiple(
             helper,
-            require_project_boot=Mock(return_value="7.0.12-ubuntu28-s4lockdown"),
+            require_project_boot=Mock(return_value="7.0.12-28-hibernate"),
             root_luks_entry=Mock(return_value=("cryptroot", device)),
             luks_metadata=Mock(return_value=metadata),
             inspect_tpm_tokens=Mock(return_value=[{"tokenId": "0", "passed": True}]),
@@ -644,12 +644,12 @@ class ManagerHelperTests(unittest.TestCase):
         self.assertIsNone(result["headerBackup"])
         self.assertEqual(result["passwordRecovery"], "verified")
         configuration.assert_called_once_with(
-            "7.0.12-ubuntu28-s4lockdown", "cryptroot", device,
+            "7.0.12-28-hibernate", "cryptroot", device,
         )
 
     def test_new_tpm_enrollment_rechecks_password_after_token_change(self) -> None:
         device = Path("/dev/mock-root")
-        release = "7.0.12-ubuntu28-s4lockdown"
+        release = "7.0.12-28-hibernate"
         before = {"tokens": {}}
         after = {"tokens": {"4": {"type": "systemd-tpm2"}}}
         password_test = Mock()
@@ -782,7 +782,7 @@ class ManagerHelperTests(unittest.TestCase):
             )
 
     def test_encrypted_root_initramfs_is_verified_before_atomic_replacement(self) -> None:
-        release = "7.0.12-ubuntu28-s4lockdown"
+        release = "7.0.12-28-hibernate"
         root_uuid = "c140e7ae-32b5-4ef9-bd82-e42083ba5f15"
         device_uuid = "cca9e414-f9c8-41e5-8ad0-7263789016d9"
         device = Path("/dev/mock-root")
@@ -853,7 +853,7 @@ class ManagerHelperTests(unittest.TestCase):
             self.assertEqual(list(boot.glob(".*.previous")), [])
 
     def test_failed_initramfs_verification_preserves_installed_image(self) -> None:
-        release = "7.0.12-ubuntu28-s4lockdown"
+        release = "7.0.12-28-hibernate"
         root_uuid = "c140e7ae-32b5-4ef9-bd82-e42083ba5f15"
         device_uuid = "cca9e414-f9c8-41e5-8ad0-7263789016d9"
         with tempfile.TemporaryDirectory() as directory:
@@ -914,7 +914,7 @@ class ManagerHelperTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(helper.HelperError, "candidate is incomplete"):
                     helper.configure_tpm_boot(
-                        "7.0.12-ubuntu28-s4lockdown",
+                        "7.0.12-28-hibernate",
                         "cryptroot",
                         Path("/dev/mock-root"),
                     )
@@ -934,14 +934,16 @@ class ManagerHelperTests(unittest.TestCase):
                 rebuild_encrypted_root_initramfs=rebuild,
             ):
                 changed = helper.configure_tpm_boot(
-                    "7.0.12-ubuntu28-s4lockdown", "cryptroot", Path("/dev/mock-root"),
+                    "7.0.12-28-hibernate", "cryptroot", Path("/dev/mock-root"),
                 )
         self.assertFalse(changed)
         rebuild.assert_called_once_with(
-            "7.0.12-ubuntu28-s4lockdown", "cryptroot", Path("/dev/mock-root"),
+            "7.0.12-28-hibernate", "cryptroot", Path("/dev/mock-root"),
         )
 
     def test_kernel_removal_requires_another_project_image(self) -> None:
+        # Legacy -s4lockdown releases remain valid project kernels; removal
+        # detection must accept the published first-Release kernel name too.
         release = "7.0.12-ubuntu28-s4lockdown"
         packages = {
             release: [f"linux-image-{release}", f"linux-headers-{release}"],

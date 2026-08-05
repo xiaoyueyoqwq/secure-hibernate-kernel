@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local state machine for authenticated s4lockdown kernel updates."""
+"""Local state machine for authenticated project kernel updates."""
 
 from __future__ import annotations
 
@@ -35,6 +35,12 @@ SOURCE_VERSION = re.compile(
     r"(?:[.+~][0-9A-Za-z.+~-]+)?$"
 )
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
+PROJECT_SUFFIXES = ("-s4lockdown", "-hibernate")
+
+
+def is_project_kernel(release: str) -> bool:
+    """Project kernels end with -hibernate; the published first Release used -s4lockdown."""
+    return release.endswith(PROJECT_SUFFIXES)
 MAX_ASSET_BYTES = 4 * 1024 * 1024 * 1024
 MAX_RELEASE_BYTES = 6 * 1024 * 1024 * 1024
 MAX_RELEASE_ASSETS = 32
@@ -58,6 +64,8 @@ INSTALL_PROGRESS = {
     "complete": 100,
 }
 
+# The published first Release uses the -ubuntu28-s4lockdown kernel name. Its
+# assets are immutable, so first installation keeps this exact embedded snapshot.
 LEGACY_RELEASE_TAG = "ubuntu-7.0.0-28.28"
 LEGACY_RELEASE_SOURCE_VERSION = "7.0.0-28.28"
 LEGACY_RELEASE_KERNEL = "7.0.12-ubuntu28-s4lockdown"
@@ -306,8 +314,8 @@ def installed_project_kernel_packages() -> dict[str, list[str]]:
             continue
         if status != "ii ":
             continue
-        match = re.fullmatch(r"linux-(?:image|headers)-([0-9].*-s4lockdown)", package)
-        if match:
+        match = re.fullmatch(r"linux-(?:image|headers)-([0-9].*)", package)
+        if match and is_project_kernel(match.group(1)):
             packages.setdefault(match.group(1), []).append(package)
     return packages
 
@@ -361,7 +369,7 @@ def installed_package_versions() -> list[str]:
         if len(fields) != 3 or fields[0] != "ii ":
             continue
         package, package_version = fields[1], fields[2]
-        if not package.startswith("linux-image-") or not package.endswith("-s4lockdown"):
+        if not package.startswith("linux-image-") or not is_project_kernel(package):
             continue
         marker = "+ubuntu"
         if marker not in package_version:
@@ -1298,7 +1306,7 @@ def install_command(arguments: argparse.Namespace) -> int:
                 )
                 if should_notify:
                     notify(
-                        f"A verified s4lockdown kernel update is available: {candidate}. "
+                        f"A verified project kernel update is available: {candidate}. "
                         "Installation requires explicit approval.",
                         testing,
                     )
@@ -1377,7 +1385,7 @@ def install_command(arguments: argparse.Namespace) -> int:
                 },
             )
             notify(
-                f"s4lockdown kernel {manifest['kernel_release']} was installed. "
+                f"project kernel {manifest['kernel_release']} was installed. "
                 "Restart when convenient; the system will not restart automatically.",
                 testing,
             )

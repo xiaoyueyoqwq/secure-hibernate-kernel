@@ -28,7 +28,7 @@ SOURCE_VERSION = re.compile(
     r"^(?P<source>[0-9]+\.[0-9]+\.[0-9]+)-(?P<abi>[0-9]+)\.[0-9]+"
     r"(?:[.+~][0-9A-Za-z.+~-]+)?$"
 )
-KERNEL_RELEASE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]*-s4lockdown$")
+KERNEL_RELEASE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]*-hibernate$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 TOP_LEVEL_KEYS = {

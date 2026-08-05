@@ -7,8 +7,8 @@ trap 'rm -rf -- "$temp_dir"' EXIT
 mock_repo="$temp_dir/repo"
 release_dir="$temp_dir/release"
 source_version=7.0.0-29.29
-kernel_release=7.0.13-ubuntu29-s4lockdown
-local_version=-ubuntu29-s4lockdown
+kernel_release=7.0.13-29-hibernate
+local_version=-29-hibernate
 release_tag=ubuntu-7.0.0-29.29
 git_commit=0123456789abcdef0123456789abcdef01234567
 package_version="1${local_version}+ubuntu${source_version}"

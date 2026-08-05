@@ -20,7 +20,7 @@ fields:
 {
   "schema_version": 1,
   "ubuntu_source_package_version": "7.0.0-29.29",
-  "kernel_release": "7.0.13-ubuntu29-s4lockdown",
+  "kernel_release": "7.0.13-29-hibernate",
   "release_tag": "ubuntu-7.0.0-29.29",
   "git_commit": "0123456789abcdef0123456789abcdef01234567",
   "certificate_sha256": "5f59e3e38f5a3c3f276beca6c2abd3cb20296d7fd3d0a2db9dbc83b0dd889711",

@@ -32,7 +32,7 @@ SystemSnapshot _completeSnapshot({
   bool tpmConfigured = true,
   bool officialFallback = true,
 }) {
-  const projectRelease = '7.0.12-ubuntu28-s4lockdown';
+  const projectRelease = '7.0.12-28-hibernate';
   return SystemSnapshot(
     collectedAt: DateTime.utc(2026),
     systemStatus: SystemStatus(
@@ -392,7 +392,7 @@ void main() {
   });
 
   test('does not borrow headers from another recorded project kernel', () {
-    const recorded = '7.0.13-ubuntu29-s4lockdown';
+    const recorded = '7.0.13-29-hibernate';
     final inferred = inferInstalledProjectKernel(
       kernels: const [
         KernelInfo(
@@ -403,16 +403,16 @@ void main() {
         ),
         KernelInfo(
           id: 'older',
-          version: '7.0.12-ubuntu28-s4lockdown',
+          version: '7.0.12-28-hibernate',
           project: true,
           status: KernelStatus.active,
         ),
       ],
-      headerReleases: const {'7.0.12-ubuntu28-s4lockdown'},
+      headerReleases: const {'7.0.12-28-hibernate'},
       imagePackageVersions: const {
-        recorded: '1-ubuntu29-s4lockdown+ubuntu7.0.0-29.29',
+        recorded: '1-29-hibernate+ubuntu7.0.0-29.29',
       },
-      activeRelease: '7.0.12-ubuntu28-s4lockdown',
+      activeRelease: '7.0.12-28-hibernate',
       recordedRelease: recorded,
     );
 
@@ -522,13 +522,13 @@ void main() {
           request.action,
           data: const {
             'installedSourceVersion': '7.0.0-29.29',
-            'installedKernelRelease': '7.0.12-ubuntu29-s4lockdown',
+            'installedKernelRelease': '7.0.13-29-hibernate',
           },
         ),
       );
       expect(
         result.data.installedKernelRelease,
-        '7.0.12-ubuntu29-s4lockdown',
+        '7.0.13-29-hibernate',
       );
 
       for (final data in <Map<String, Object?>>[
@@ -867,8 +867,8 @@ void main() {
   test('clears stale reboot-required state after the target kernel boots', () {
     final pending = resolveRebootStatus(
       true,
-      '7.0.12-ubuntu29-s4lockdown',
-      '7.0.12-ubuntu28-s4lockdown',
+      '7.0.13-29-hibernate',
+      '7.0.12-28-hibernate',
       'installed-reboot-required',
     );
     expect(pending.rebootRequired, isTrue);
@@ -876,8 +876,8 @@ void main() {
 
     final current = resolveRebootStatus(
       true,
-      '7.0.12-ubuntu29-s4lockdown',
-      '7.0.12-ubuntu29-s4lockdown',
+      '7.0.13-29-hibernate',
+      '7.0.13-29-hibernate',
       'installed-reboot-required',
     );
     expect(current.rebootRequired, isFalse);
