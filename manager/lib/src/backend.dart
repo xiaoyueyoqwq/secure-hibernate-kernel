@@ -237,6 +237,7 @@ class SystemSnapshot {
 }
 
 enum ManagerActionType {
+  startupRefresh,
   startCheck,
   pauseCheck,
   resumeCheck,
@@ -255,6 +256,7 @@ enum ManagerActionType {
 
 extension ManagerActionWireValue on ManagerActionType {
   String get wireValue => switch (this) {
+        ManagerActionType.startupRefresh => 'startup-refresh',
         ManagerActionType.startCheck => 'start-check',
         ManagerActionType.pauseCheck => 'pause-check',
         ManagerActionType.resumeCheck => 'resume-check',
@@ -369,6 +371,44 @@ class ProjectMokInspection {
   final String? fingerprintSha256;
   final String? error;
   final String? oneTimePassword;
+}
+
+ProjectMokInspection projectMokInspectionFromActionResult(
+  ManagerActionResult result,
+) {
+  if (result.status == ManagerActionStatus.cancelled) {
+    return const ProjectMokInspection(
+      status: ProjectMokStatus.cancelled,
+      fingerprintSha256: null,
+      error: null,
+      oneTimePassword: null,
+    );
+  }
+  if (result.status == ManagerActionStatus.error) {
+    return ProjectMokInspection(
+      status: ProjectMokStatus.error,
+      fingerprintSha256: null,
+      error: result.error,
+      oneTimePassword: null,
+    );
+  }
+  final data = result.data;
+  final status = switch (data.mokStatus) {
+    'enrolled' => ProjectMokStatus.enrolled,
+    'pending' when data.oneTimePassword != null =>
+      ProjectMokStatus.pendingEnrollment,
+    'not-pending' => ProjectMokStatus.missing,
+    _ => ProjectMokStatus.error,
+  };
+  return ProjectMokInspection(
+    status: status,
+    fingerprintSha256:
+        status == ProjectMokStatus.error ? null : data.fingerprintSha256,
+    error: status == ProjectMokStatus.error
+        ? 'Privileged helper returned an incomplete MOK inspection result'
+        : null,
+    oneTimePassword: data.oneTimePassword,
+  );
 }
 
 class SetupProgress {

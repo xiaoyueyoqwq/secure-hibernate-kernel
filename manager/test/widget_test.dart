@@ -323,28 +323,25 @@ class _StartupKernelCheckBackend extends _CancelledManagerBackend {
   Future<ManagerActionResult> runManagerAction(
     ManagerActionRequest request,
   ) async {
-    expect(request.action, ManagerActionType.startCheck);
-    events.add('start-check');
+    expect(request.action, ManagerActionType.startupRefresh);
+    events.add('startup-refresh');
     started = true;
     return const ManagerActionResult(
-      action: ManagerActionType.startCheck,
+      action: ManagerActionType.startupRefresh,
       status: ManagerActionStatus.success,
       error: null,
-      data: ManagerActionData(),
+      data: ManagerActionData(
+        mokStatus: 'enrolled',
+        fingerprintSha256:
+            '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
+            'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+      ),
     );
   }
 
   @override
   Future<ProjectMokInspection> inspectProjectMok() async {
-    events.add('inspect-mok');
-    return const ProjectMokInspection(
-      status: ProjectMokStatus.enrolled,
-      fingerprintSha256:
-          '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
-          'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
-      error: null,
-      oneTimePassword: null,
-    );
+    throw StateError('Startup MOK inspection must use startup-refresh');
   }
 }
 
@@ -1066,7 +1063,7 @@ void main() {
     expect(find.text('Protected'), findsOneWidget);
   });
 
-  testWidgets('native startup checks the kernel before inspecting MOK',
+  testWidgets('native startup combines kernel and MOK work in one action',
       (tester) async {
     final translations = _translations ?? await TranslationCatalog.load();
     _translations = translations;
@@ -1084,12 +1081,9 @@ void main() {
       await tester.pump();
     }
 
-    expect(
-        backend.events.where((event) => event == 'start-check'), hasLength(1));
-    expect(
-      backend.events.indexOf('start-check'),
-      lessThan(backend.events.indexOf('inspect-mok')),
-    );
+    expect(backend.events.where((event) => event == 'startup-refresh'),
+        hasLength(1));
+    expect(find.text('Protected'), findsOneWidget);
     expect(
         backend.events,
         containsAllInOrder([

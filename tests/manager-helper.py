@@ -691,6 +691,34 @@ class ManagerHelperTests(unittest.TestCase):
             self.assertEqual(result["mokStatus"], "enrolled")
             self.assertFalse(state.exists())
 
+    def test_startup_refresh_combines_mok_inspection_and_kernel_check(self) -> None:
+        events = []
+
+        def inspect():
+            events.append("inspect-mok")
+            return {
+                "mokStatus": "enrolled",
+                "fingerprintSha256": helper.PROJECT_FINGERPRINT,
+            }
+
+        def start():
+            events.append("start-check")
+            return {"unit": helper.CHECK_UNIT, "stdout": "", "stderr": ""}
+
+        with patch.object(
+            helper, "action_inspect_mok", side_effect=inspect
+        ), patch.object(helper, "action_start_check", side_effect=start):
+            result = helper.dispatch(SimpleNamespace(action="startup-refresh"))
+
+        self.assertEqual(events, ["inspect-mok", "start-check"])
+        self.assertEqual(result, {
+            "mokStatus": "enrolled",
+            "fingerprintSha256": helper.PROJECT_FINGERPRINT,
+            "unit": helper.CHECK_UNIT,
+            "stdout": "",
+            "stderr": "",
+        })
+
     def test_mok_cancel_refuses_unrelated_pending_request(self) -> None:
         with patch.object(
             helper,

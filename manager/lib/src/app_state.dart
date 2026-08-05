@@ -455,9 +455,61 @@ class ManagerController extends ChangeNotifier {
   }
 
   Future<void> _runStartupNativeActions() async {
+    if (!_startupKernelCheckAttempted &&
+        !_startupMokInspectionAttempted &&
+        _activeKernelCheckStart == null &&
+        _activeMokInspection == null &&
+        backend != null &&
+        setupComplete &&
+        updater.controllerInstalled &&
+        updater.policy != UpdatePolicy.manual) {
+      await _performCombinedStartupRefresh();
+      return;
+    }
     await _checkKernelUpdateOnStartup();
     if (!_disposed && !_startupMokInspectionAttempted) {
       await inspectProjectMok();
+    }
+  }
+
+  Future<void> _performCombinedStartupRefresh() async {
+    _startupKernelCheckAttempted = true;
+    _startupMokInspectionAttempted = true;
+    final baselineStatus = updater.lastCheckStatus;
+    final baselineCheckedAt = updater.lastCheckedAt;
+    projectMokStatus = ProjectMokStatus.pendingConfirmation;
+    notifyListeners();
+
+    const request = ManagerActionRequest(ManagerActionType.startupRefresh);
+    final action = backend!.runManagerAction(request);
+    final kernelStart = action.then(
+      (result) => ManagerActionResult(
+        action: ManagerActionType.startCheck,
+        status: result.status,
+        error: result.error,
+        data: const ManagerActionData(),
+      ),
+    );
+    final mokInspection = action.then(projectMokInspectionFromActionResult);
+    _activeKernelCheckStart = kernelStart;
+    _activeMokInspection = mokInspection;
+    try {
+      final result = await action;
+      if (_disposed) return;
+      _publishActionResult(request, result);
+      final inspection = await mokInspection;
+      if (_disposed) return;
+      _applyProjectMokInspection(inspection, publishFailure: false);
+      if (result.status == ManagerActionStatus.success) {
+        _startKernelCheckMonitor(baselineStatus, baselineCheckedAt);
+      }
+    } finally {
+      if (identical(_activeKernelCheckStart, kernelStart)) {
+        _activeKernelCheckStart = null;
+      }
+      if (identical(_activeMokInspection, mokInspection)) {
+        _activeMokInspection = null;
+      }
     }
   }
 
@@ -668,6 +720,14 @@ class ManagerController extends ChangeNotifier {
     projectMokStatus = ProjectMokStatus.pendingConfirmation;
     notifyListeners();
     final inspection = await backend!.inspectProjectMok();
+    _applyProjectMokInspection(inspection);
+    return inspection;
+  }
+
+  void _applyProjectMokInspection(
+    ProjectMokInspection inspection, {
+    bool publishFailure = true,
+  }) {
     projectMokStatus = inspection.status == ProjectMokStatus.cancelled
         ? ProjectMokStatus.unknown
         : inspection.status;
@@ -679,13 +739,13 @@ class ManagerController extends ChangeNotifier {
       addLog('[System] Project MOK is not enrolled');
     } else if (inspection.status == ProjectMokStatus.pendingEnrollment) {
       addLog('[System] Project MOK enrollment is pending');
-    } else if (inspection.status == ProjectMokStatus.cancelled) {
+    } else if (publishFailure &&
+        inspection.status == ProjectMokStatus.cancelled) {
       _publishAuthorizationDenied();
-    } else if (inspection.error != null) {
+    } else if (publishFailure && inspection.error != null) {
       _publishPrivilegedFailure('inspect-mok', inspection.error!);
     }
     notifyListeners();
-    return inspection;
   }
 
   Future<ManagerActionResult> runManagerAction(

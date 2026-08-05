@@ -229,39 +229,7 @@ class NativeManagerBackend implements ManagerBackend {
     final result = await runManagerAction(
       const ManagerActionRequest(ManagerActionType.inspectMok),
     );
-    if (result.status == ManagerActionStatus.cancelled) {
-      return const ProjectMokInspection(
-        status: ProjectMokStatus.cancelled,
-        fingerprintSha256: null,
-        error: null,
-        oneTimePassword: null,
-      );
-    }
-    if (result.status == ManagerActionStatus.error) {
-      return ProjectMokInspection(
-        status: ProjectMokStatus.error,
-        fingerprintSha256: null,
-        error: result.error,
-        oneTimePassword: null,
-      );
-    }
-    final data = result.data;
-    final status = switch (data.mokStatus) {
-      'enrolled' => ProjectMokStatus.enrolled,
-      'pending' when data.oneTimePassword != null =>
-        ProjectMokStatus.pendingEnrollment,
-      'not-pending' => ProjectMokStatus.missing,
-      _ => ProjectMokStatus.error,
-    };
-    return ProjectMokInspection(
-      status: status,
-      fingerprintSha256:
-          status == ProjectMokStatus.error ? null : data.fingerprintSha256,
-      error: status == ProjectMokStatus.error
-          ? 'Privileged helper returned an incomplete MOK inspection result'
-          : null,
-      oneTimePassword: data.oneTimePassword,
-    );
+    return projectMokInspectionFromActionResult(result);
   }
 
   @override
@@ -1443,6 +1411,7 @@ void _requireSuccessData(
           'Helper returned an invalid project MOK result',
         );
       }
+    case ManagerActionType.startupRefresh:
     case ManagerActionType.inspectMok:
       if (data.fingerprintSha256 != _projectFingerprint ||
           (data.mokStatus != 'enrolled' &&

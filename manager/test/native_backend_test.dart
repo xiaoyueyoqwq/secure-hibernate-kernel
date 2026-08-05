@@ -146,6 +146,43 @@ class _DeniedCommandRunner implements CommandRunner {
   }
 }
 
+class _StartupRefreshCommandRunner implements CommandRunner {
+  int pkexecCalls = 0;
+  List<String>? pkexecArguments;
+
+  @override
+  Future<CommandResult> run(
+    String executable,
+    List<String> arguments, {
+    Duration timeout = const Duration(seconds: 10),
+    List<int>? stdinBytes,
+  }) async {
+    if (executable == '/usr/bin/stat') {
+      return const CommandResult(
+        exitCode: 0,
+        stdout: 'regular file\t0\t755\n',
+        stderr: '',
+      );
+    }
+    if (executable == '/usr/bin/pkexec') {
+      pkexecCalls += 1;
+      pkexecArguments = arguments;
+      return CommandResult(
+        exitCode: 0,
+        stdout: _helperResponse(
+          ManagerActionType.startupRefresh,
+          data: const {
+            'mokStatus': 'enrolled',
+            'fingerprintSha256': _projectFingerprint,
+          },
+        ),
+        stderr: '',
+      );
+    }
+    throw StateError('Unexpected test command: $executable $arguments');
+  }
+}
+
 class _PasswordCommandRunner implements CommandRunner {
   List<String>? pkexecArguments;
   List<int>? pkexecStdin;
@@ -717,6 +754,32 @@ void main() {
     expect(result.status, ManagerActionStatus.cancelled);
     expect(result.error, isNull);
     expect(runner.pkexecCalls, 1);
+  });
+
+  test('runs the fixed startup refresh through one pkexec call', () async {
+    final runner = _StartupRefreshCommandRunner();
+    final backend = NativeManagerBackend(
+      commandRunner: runner,
+      environment: const {'HOME': '/tmp/manager-native-backend-test'},
+    );
+
+    final result = await backend.runManagerAction(
+      const ManagerActionRequest(ManagerActionType.startupRefresh),
+    );
+
+    expect(result.status, ManagerActionStatus.success);
+    expect(
+      projectMokInspectionFromActionResult(result).status,
+      ProjectMokStatus.enrolled,
+    );
+    expect(runner.pkexecCalls, 1);
+    expect(
+      runner.pkexecArguments,
+      const [
+        '/usr/local/lib/s4lockdown-update/scripts/manager-helper.py',
+        'startup-refresh',
+      ],
+    );
   });
 
   test('passes a LUKS password only through fixed helper stdin', () async {

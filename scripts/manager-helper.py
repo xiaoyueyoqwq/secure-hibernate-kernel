@@ -618,6 +618,12 @@ def action_inspect_mok() -> dict[str, Any]:
     }
 
 
+def action_startup_refresh() -> dict[str, Any]:
+    inspection = action_inspect_mok()
+    check = action_start_check()
+    return {**inspection, **check}
+
+
 def action_cancel_mok() -> dict[str, Any]:
     if not require_only_project_mok_pending():
         raise HelperError("No project MOK enrollment request is pending")
@@ -1366,7 +1372,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
     for name in (
-        "start-check", "pause-check", "resume-check", "install-update",
+        "startup-refresh", "start-check", "pause-check", "resume-check", "install-update",
         "inspect-mok", "prepare-mok", "cancel-mok", "verify-tpm",
         "repair-swap",
     ):
@@ -1385,6 +1391,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def dispatch(arguments: argparse.Namespace) -> dict[str, Any]:
     actions = {
+        "startup-refresh": action_startup_refresh,
         "start-check": action_start_check,
         "pause-check": action_pause_check,
         "resume-check": action_start_check,
