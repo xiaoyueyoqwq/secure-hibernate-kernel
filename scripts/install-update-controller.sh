@@ -188,7 +188,7 @@ installation_complete=true
 
 printf 'Installed updater with policy: %s\n' "$installed_policy"
 if [[ $installed_policy == manual ]]; then
-	printf 'The daily timer is disabled by the manual policy.\n'
+	printf 'The scheduled timer is disabled by the manual policy.\n'
 else
-	printf 'The timer checks daily and never restarts the system automatically.\n'
+	printf 'The timer checks after boot and at 10:00, 15:00, and 20:00 daily.\n'
 fi

@@ -36,6 +36,7 @@ class _AvailableManagerUpdateChecker implements ManagerUpdateChecker {
 UpdateControllerStatus testUpdaterStatus({
   String? status,
   String? checkedAt,
+  UpdatePolicy policy = UpdatePolicy.checkAndNotify,
   bool checkServiceActive = false,
   int? downloadedBytes,
   int? totalBytes,
@@ -44,7 +45,7 @@ UpdateControllerStatus testUpdaterStatus({
 }) =>
     UpdateControllerStatus(
       controllerInstalled: true,
-      policy: UpdatePolicy.checkAndNotify,
+      policy: policy,
       lastCheckStatus: status,
       lastCheckedAt: checkedAt,
       availableSourceVersion: null,
@@ -273,6 +274,96 @@ class _StartupMokBackend extends _CancelledManagerBackend {
       error: null,
       oneTimePassword: null,
     );
+  }
+}
+
+class _StartupKernelCheckBackend extends _CancelledManagerBackend {
+  final List<String> events = [];
+  bool started = false;
+  int readsAfterStart = 0;
+
+  @override
+  Future<SetupProgress> getSetupProgress() async =>
+      const SetupProgress(checkpoint: null, completed: true);
+
+  @override
+  Future<SystemSnapshot> getSnapshot() async {
+    if (!started) {
+      return testSnapshot(testUpdaterStatus(
+        status: 'release-unavailable',
+        checkedAt: '2026-08-05T10:28:08Z',
+      ));
+    }
+    readsAfterStart += 1;
+    if (readsAfterStart == 1) {
+      events.add('stale-snapshot');
+      return testSnapshot(testUpdaterStatus(
+        status: 'release-unavailable',
+        checkedAt: '2026-08-05T10:28:08Z',
+      ));
+    }
+    if (readsAfterStart == 2) {
+      events.add('running-snapshot');
+      return testSnapshot(testUpdaterStatus(
+        status: 'downloading',
+        checkedAt: '2026-08-05T11:28:37Z',
+        checkServiceActive: true,
+        downloadedBytes: 10,
+        totalBytes: 100,
+      ));
+    }
+    events.add('terminal-snapshot');
+    return testSnapshot(testUpdaterStatus(
+      status: 'verified',
+      checkedAt: '2026-08-05T11:29:46Z',
+    ));
+  }
+
+  @override
+  Future<ManagerActionResult> runManagerAction(
+    ManagerActionRequest request,
+  ) async {
+    expect(request.action, ManagerActionType.startCheck);
+    events.add('start-check');
+    started = true;
+    return const ManagerActionResult(
+      action: ManagerActionType.startCheck,
+      status: ManagerActionStatus.success,
+      error: null,
+      data: ManagerActionData(),
+    );
+  }
+
+  @override
+  Future<ProjectMokInspection> inspectProjectMok() async {
+    events.add('inspect-mok');
+    return const ProjectMokInspection(
+      status: ProjectMokStatus.enrolled,
+      fingerprintSha256:
+          '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
+          'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+      error: null,
+      oneTimePassword: null,
+    );
+  }
+}
+
+class _StartupManualPolicyBackend extends _StartupMokBackend {
+  int startRequests = 0;
+
+  @override
+  Future<SystemSnapshot> getSnapshot() async => testSnapshot(testUpdaterStatus(
+        status: 'manual',
+        checkedAt: '2026-08-05T10:28:08Z',
+        policy: UpdatePolicy.manual,
+      ));
+
+  @override
+  Future<ManagerActionResult> runManagerAction(
+    ManagerActionRequest request,
+  ) async {
+    startRequests += 1;
+    return super.runManagerAction(request);
   }
 }
 
@@ -975,6 +1066,39 @@ void main() {
     expect(find.text('Protected'), findsOneWidget);
   });
 
+  testWidgets('native startup checks the kernel before inspecting MOK',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _StartupKernelCheckBackend();
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(
+        translations: translations,
+        backend: backend,
+      ),
+    );
+    await tester.pump();
+    for (var poll = 0; poll < 4; poll += 1) {
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+    }
+
+    expect(
+        backend.events.where((event) => event == 'start-check'), hasLength(1));
+    expect(
+      backend.events.indexOf('start-check'),
+      lessThan(backend.events.indexOf('inspect-mok')),
+    );
+    expect(
+        backend.events,
+        containsAllInOrder([
+          'stale-snapshot',
+          'running-snapshot',
+          'terminal-snapshot',
+        ]));
+  });
+
   testWidgets('package verification failure is shown on the matching row',
       (tester) async {
     final translations = _translations ?? await TranslationCatalog.load();
@@ -1086,5 +1210,23 @@ void main() {
       find.byKey(const ValueKey('preflight-dialog')),
       findsNothing,
     );
+  });
+
+  testWidgets('native startup preserves the manual kernel update policy',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _StartupManualPolicyBackend();
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(
+        translations: translations,
+        backend: backend,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(backend.startRequests, 0);
+    expect(backend.mokInspections, 1);
   });
 }

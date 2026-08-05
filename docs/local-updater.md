@@ -2,7 +2,7 @@
 
 ## Execution model
 
-The updater has two systemd stages and one daily timer:
+The updater has two systemd stages and one scheduled timer:
 
 - `s4lockdown-update-check.service` runs as the dedicated, non-login
   `s4lockdown-update` user. It resolves the current Ubuntu HWE source version,
@@ -15,9 +15,9 @@ The updater has two systemd stages and one daily timer:
   metadata, hash, and package validation. It accepts only an exact
   source-version and Release-tag match before following the configured
   installation policy.
-- `s4lockdown-update.timer` starts the sequence daily with a randomized delay
-  and catches up after missed calendar runs. The root stage runs only on AC
-  power.
+- `s4lockdown-update.timer` starts the sequence 15 minutes after boot and at
+  10:00, 15:00, and 20:00 local time. It catches up after missed calendar runs.
+  The root stage runs only on AC power.
 
 Both stages take the same non-blocking `flock` lock. They never execute a file
 from the downloaded Release, never receive a private key, and never run from a

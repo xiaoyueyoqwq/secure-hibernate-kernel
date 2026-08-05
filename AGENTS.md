@@ -133,10 +133,10 @@
   release detection informational only.
 - Do not expose Manager options that the backend cannot enforce. The current
   updater supports exactly `manual`, `check-and-notify`, and
-  `automatic-install`, checks daily when enabled, and retains 1, 2, or 3
-  historical project kernels as configured. A running older project kernel may
-  temporarily exceed that count. Official Ubuntu kernels are not part of
-  project-kernel retention.
+  `automatic-install`, checks after boot and at 10:00, 15:00, and 20:00 when
+  enabled, and retains 1, 2, or 3 historical project kernels as configured. A
+  running older project kernel may temporarily exceed that count. Official
+  Ubuntu kernels are not part of project-kernel retention.
 - Restrict Manager setup simulations to injected test backends. The production
   Flutter entry point must always use the fixed native backend and must never
   advance through simulated success.

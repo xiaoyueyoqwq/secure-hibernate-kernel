@@ -46,6 +46,17 @@ enum ManagerPage { overview, wizard, kernels, security, settings, diagnostics }
 
 enum ManagerNoticeType { info, success, warning, error, loading }
 
+const _kernelCheckPollInterval = Duration(seconds: 1);
+const _kernelCheckMonitorTimeout = Duration(hours: 2);
+const _kernelCheckInactiveGracePolls = 10;
+const _kernelCheckRunningStatuses = {
+  'indexing',
+  'downloading',
+  'verifying-manifest',
+  'verifying-packages',
+  'authorizing-version',
+};
+
 class ManagerNotice {
   const ManagerNotice({
     required this.id,
@@ -167,7 +178,10 @@ class ManagerController extends ChangeNotifier {
   int _noticeCounter = 0;
   Future<ProjectMokInspection>? _activeMokInspection;
   Future<void>? _activeManagerUpdateCheck;
+  Future<ManagerActionResult>? _activeKernelCheckStart;
+  Future<void>? _activeKernelCheckMonitor;
   bool _startupMokInspectionAttempted = false;
+  bool _startupKernelCheckAttempted = false;
 
   AppMessages get t => translations.messages(language);
 
@@ -217,12 +231,12 @@ class ManagerController extends ChangeNotifier {
         backendConnection = BackendConnection.native;
       }
       addLog('[System] Native Manager backend connected');
-      // MOK enrollment is root-readable only through the fixed Helper. Defer
-      // the first inspection until the startup frame is visible so Polkit can
-      // present its authorization dialog without racing wizard recovery UI.
+      // Defer fixed Helper startup actions until the first frame is visible so
+      // Polkit can present authorization without racing wizard recovery UI.
+      // Start the kernel check before MOK inspection to serialize the prompts.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_disposed && !_startupMokInspectionAttempted) {
-          unawaited(inspectProjectMok());
+          unawaited(_runStartupNativeActions());
         }
       });
     } on Object catch (error) {
@@ -436,6 +450,124 @@ class ManagerController extends ChangeNotifier {
       );
     }
     notifyListeners();
+  }
+
+  Future<void> _runStartupNativeActions() async {
+    await _checkKernelUpdateOnStartup();
+    if (!_disposed && !_startupMokInspectionAttempted) {
+      await inspectProjectMok();
+    }
+  }
+
+  Future<void> _checkKernelUpdateOnStartup() async {
+    if (_startupKernelCheckAttempted) return;
+    _startupKernelCheckAttempted = true;
+    if (!setupComplete ||
+        !updater.controllerInstalled ||
+        updater.policy == UpdatePolicy.manual) {
+      return;
+    }
+    await startKernelUpdateCheck();
+  }
+
+  Future<ManagerActionResult> startKernelUpdateCheck() {
+    final active = _activeKernelCheckStart;
+    if (active != null) return active;
+    final start = _performKernelUpdateCheckStart();
+    _activeKernelCheckStart = start;
+    return start.whenComplete(() {
+      if (identical(_activeKernelCheckStart, start)) {
+        _activeKernelCheckStart = null;
+      }
+    });
+  }
+
+  Future<ManagerActionResult> _performKernelUpdateCheckStart() async {
+    if (backend == null) {
+      return const ManagerActionResult(
+        action: ManagerActionType.startCheck,
+        status: ManagerActionStatus.error,
+        error: 'Kernel update checks require the native Manager backend',
+        data: ManagerActionData(),
+      );
+    }
+    final baselineStatus = updater.lastCheckStatus;
+    final baselineCheckedAt = updater.lastCheckedAt;
+    if (_activeKernelCheckMonitor != null || updater.checkServiceActive) {
+      _startKernelCheckMonitor(baselineStatus, baselineCheckedAt);
+      return const ManagerActionResult(
+        action: ManagerActionType.startCheck,
+        status: ManagerActionStatus.success,
+        error: null,
+        data: ManagerActionData(),
+      );
+    }
+    final result = await runManagerAction(
+      const ManagerActionRequest(ManagerActionType.startCheck),
+    );
+    if (result.status == ManagerActionStatus.success && !_disposed) {
+      _startKernelCheckMonitor(baselineStatus, baselineCheckedAt);
+    }
+    return result;
+  }
+
+  void _startKernelCheckMonitor(
+    String? baselineStatus,
+    String? baselineCheckedAt,
+  ) {
+    if (_activeKernelCheckMonitor != null) return;
+    late final Future<void> monitor;
+    monitor =
+        _monitorKernelCheck(baselineStatus, baselineCheckedAt).whenComplete(() {
+      if (identical(_activeKernelCheckMonitor, monitor)) {
+        _activeKernelCheckMonitor = null;
+      }
+    });
+    _activeKernelCheckMonitor = monitor;
+  }
+
+  Future<void> _monitorKernelCheck(
+    String? baselineStatus,
+    String? baselineCheckedAt,
+  ) async {
+    final deadline = DateTime.now().add(_kernelCheckMonitorTimeout);
+    var inactivePollsRemaining = _kernelCheckInactiveGracePolls;
+    var consecutiveReadFailures = 0;
+    while (!_disposed && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(_kernelCheckPollInterval);
+      if (_disposed) return;
+      try {
+        await refreshSnapshot();
+        consecutiveReadFailures = 0;
+      } on Object catch (error) {
+        consecutiveReadFailures += 1;
+        if (consecutiveReadFailures >= 3) {
+          addLog('[Error] Kernel update status refresh failed: $error');
+          return;
+        }
+        continue;
+      }
+      final stateAdvanced = updater.lastCheckStatus != baselineStatus ||
+          updater.lastCheckedAt != baselineCheckedAt;
+      if (updater.checkServiceActive) {
+        inactivePollsRemaining = _kernelCheckInactiveGracePolls;
+        continue;
+      }
+      if (stateAdvanced &&
+          !_kernelCheckRunningStatuses.contains(updater.lastCheckStatus)) {
+        return;
+      }
+      inactivePollsRemaining -= 1;
+      if (inactivePollsRemaining <= 0) {
+        addLog(
+          '[Warning] Kernel update check did not publish a terminal state',
+        );
+        return;
+      }
+    }
+    if (!_disposed) {
+      addLog('[Warning] Kernel update check status monitoring timed out');
+    }
   }
 
   Future<void> openManagerUpdateRelease() async {

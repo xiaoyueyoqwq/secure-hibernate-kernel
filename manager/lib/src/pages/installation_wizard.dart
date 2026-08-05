@@ -290,9 +290,9 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
       final previousStatus = manager.updater.lastCheckStatus;
       final previousCheckedAt = manager.updater.lastCheckedAt;
       setState(() => processing = true);
-      final result = await manager.runManagerAction(
-        ManagerActionRequest(action),
-      );
+      final result = action == ManagerActionType.startCheck
+          ? await manager.startKernelUpdateCheck()
+          : await manager.runManagerAction(ManagerActionRequest(action));
       if (!mounted) return;
       if (result.status == ManagerActionStatus.success && startsCheck) {
         setState(() {
