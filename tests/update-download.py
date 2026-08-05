@@ -167,6 +167,22 @@ class UpdateDownloadTests(unittest.TestCase):
 
             self.assertEqual(target.read_text(encoding="ascii"), "unchanged")
 
+    def test_manager_update_lock_waits_for_active_scheduled_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            updater.fcntl,
+            "flock",
+            side_effect=[BlockingIOError(), None],
+        ) as flock, patch.object(
+            updater.time,
+            "monotonic",
+            side_effect=[100.0, 100.5],
+        ), patch.object(updater.time, "sleep") as sleep:
+            with updater.update_lock(Path(directory) / "update.lock", wait=True):
+                pass
+
+        self.assertEqual(flock.call_count, 2)
+        sleep.assert_called_once_with(0.5)
+
     def test_project_kernel_detection_accepts_current_and_legacy_suffixes(self) -> None:
         for release in (
             "7.0.12-28-hibernate",
@@ -274,6 +290,7 @@ class UpdateDownloadTests(unittest.TestCase):
                     result = updater.check_command(
                         SimpleNamespace(
                             force=True,
+                            wait_for_lock=False,
                             source_version="7.0.0-29.29",
                             installed_source_version=None,
                             source_dir=None,

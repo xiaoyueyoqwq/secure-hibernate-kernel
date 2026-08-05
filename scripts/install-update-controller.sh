@@ -170,6 +170,10 @@ systemd-analyze verify \
 	/etc/systemd/system/s4lockdown-update.service \
 	/etc/systemd/system/s4lockdown-update.timer
 systemctl daemon-reload
+systemctl reset-failed \
+	s4lockdown-update-check.service \
+	s4lockdown-update-manager-check.service \
+	s4lockdown-update.service
 
 installed_policy=$(sed -n 's/^POLICY=//p' /etc/s4lockdown-update.conf)
 case $installed_policy in

@@ -30,7 +30,7 @@ signed_dir=$(realpath "$1")
 certificate=$(realpath "$2")
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-required_commands=(dpkg-deb find realpath sbverify)
+required_commands=(dpkg-deb dpkg-query find realpath sbverify)
 if ! $install_only; then
 	required_commands+=(modinfo nproc openssl sed sort tr wc xargs)
 fi
@@ -132,7 +132,24 @@ if ! $install_only; then
 	fi
 fi
 
-dpkg --install "$header_package" "$image_package"
+package_installed_exactly() {
+	local package=$1
+	local archive=$2
+	local expected_version installed
+	expected_version=$(dpkg-deb -f "$archive" Version)
+	installed=$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' "$package" \
+		2>/dev/null || true)
+	[[ $installed == $'ii \t'"$expected_version" ]]
+}
+
+header_name="linux-headers-$kernel_release"
+if package_installed_exactly "$header_name" "$header_package" &&
+	package_installed_exactly "$package_name" "$image_package"; then
+	printf 'Signed kernel packages are already installed for %s; resuming configuration.\n' \
+		"$kernel_release"
+else
+	dpkg --install "$header_package" "$image_package"
+fi
 sbverify --cert "$certificate" "/boot/vmlinuz-$kernel_release"
 "$repo_root/scripts/set-default-kernel.sh" "$kernel_release"
 

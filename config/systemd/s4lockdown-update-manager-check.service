@@ -3,7 +3,6 @@ Description=Download and verify s4lockdown updates requested by Manager
 Documentation=https://github.com/xiaoyueyoqwq/secure-hibernate-kernel
 Wants=network-online.target
 After=network-online.target
-Conflicts=s4lockdown-update-check.service
 
 [Service]
 Type=oneshot
@@ -11,7 +10,8 @@ User=s4lockdown-update
 Group=s4lockdown-update
 CacheDirectory=s4lockdown-update
 CacheDirectoryMode=0755
-ExecStart=/usr/local/lib/s4lockdown-update/scripts/update-local.sh check --force
+ExecStart=/usr/local/lib/s4lockdown-update/scripts/update-local.sh check --force --wait-for-lock
+TimeoutStartSec=2h
 UMask=0077
 NoNewPrivileges=yes
 PrivateDevices=yes

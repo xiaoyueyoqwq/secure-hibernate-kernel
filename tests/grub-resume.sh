@@ -64,7 +64,19 @@ fi
 
 # shellcheck disable=SC2016
 grep -Fq 'grub-reboot "$entry_id"' "$helper"
+grep -Fq 'GRUB_TOP_LEVEL="/boot/vmlinuz-%s"' \
+	"$repo_root/scripts/set-default-kernel.sh"
 grep -Fq 'GRUB_TIMEOUT_STYLE=hidden' "$repo_root/scripts/set-default-kernel.sh"
 grep -Fq 'GRUB_TIMEOUT=0' "$repo_root/scripts/set-default-kernel.sh"
 grep -Fq 'GRUB_RECORDFAIL_TIMEOUT=0' "$repo_root/scripts/set-default-kernel.sh"
+update_line=$(grep -n 'update-grub' "$repo_root/scripts/set-default-kernel.sh" \
+	| head -n 1 | cut -d: -f1)
+validation_line=$(grep -n 'validate_grub_entries /boot/grub/grub.cfg' \
+	"$repo_root/scripts/set-default-kernel.sh" | tail -n 1 | cut -d: -f1)
+if [[ -z $update_line || -z $validation_line || $validation_line -le $update_line ]]; then
+	printf 'GRUB selection is not validated after regeneration.\n' >&2
+	exit 1
+fi
+grep -Fq 'restoring the previous configuration' \
+	"$repo_root/scripts/set-default-kernel.sh"
 printf 'GRUB resume-entry tests passed\n'

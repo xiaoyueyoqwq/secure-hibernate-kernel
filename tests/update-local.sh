@@ -43,6 +43,7 @@ if [[ ${1:-} != --install-only ]]; then
 fi
 printf 'install %s\n' "$2" >> "$S4LOCKDOWN_TEST_PACKAGE_LOG"
 if [[ ${S4LOCKDOWN_TEST_INSTALL_FAIL:-0} == 1 ]]; then
+	printf 'precise package configuration failure\n' >&2
 	exit 42
 fi
 EOF
@@ -61,6 +62,21 @@ printf '%s\n' \
 	"  Candidate: $S4LOCKDOWN_TEST_APT_VERSION"
 EOF
 chmod 0755 "$mock_bin/apt-cache"
+
+cat > "$mock_bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ -z ${S4LOCKDOWN_TEST_INSTALLED_SOURCE_VERSION:-} ]]; then
+	exec /usr/bin/dpkg-query "$@"
+fi
+if [[ $* == *'${Version}'* ]]; then
+	printf 'ii \tlinux-image-7.0.14-30-hibernate\t1-30-hibernate+ubuntu%s\n' \
+		"$S4LOCKDOWN_TEST_INSTALLED_SOURCE_VERSION"
+else
+	printf 'linux-image-7.0.14-30-hibernate\tii \n'
+fi
+EOF
+chmod 0755 "$mock_bin/dpkg-query"
 
 build_package() {
 	local release_dir=$1
@@ -137,6 +153,7 @@ run_update() {
 	env \
 		PATH="$mock_bin:$PATH" \
 		S4LOCKDOWN_TEST_ROOT="$test_root" \
+		S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES="${S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES:-1}" \
 		S4LOCKDOWN_TEST_APT_VERSION="$expected_source_version" \
 		S4LOCKDOWN_TEST_PACKAGE_TOOL="$package_tool" \
 		S4LOCKDOWN_TEST_PACKAGE_LOG="$temp_dir/package.log" \
@@ -258,8 +275,27 @@ fi
 [[ $(json_value "$state_file" last_check_status) == install-failed ]]
 [[ $(json_value "$state_file" install_phase) == failed ]]
 [[ $(json_value "$state_file" install_progress) == 78 ]]
+[[ $(json_value "$state_file" last_install_error) == \
+	'precise package configuration failure' ]]
 [[ $(json_value "$state_file" installed_source_version) == 7.0.0-29.29 ]]
 [[ -d $test_root/var/lib/s4lockdown-update/available ]]
+
+rm -rf -- "$test_root/var/lib/s4lockdown-update/available"
+S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES=0 \
+	S4LOCKDOWN_TEST_INSTALLED_SOURCE_VERSION=7.0.0-30.30 \
+	run_update check --force --source-version 7.0.0-30.30 \
+		--source-dir "$release_30" >/dev/null
+[[ $(json_value "$test_root/var/cache/s4lockdown-update/check-state.json" status) == verified ]]
+[[ -d $test_root/var/cache/s4lockdown-update/staged ]]
+
+S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES=0 \
+	S4LOCKDOWN_TEST_INSTALLED_SOURCE_VERSION=7.0.0-30.30 \
+	run_update install >/dev/null
+[[ $(json_value "$state_file" last_check_status) == installed-reboot-required ]]
+[[ $(json_value "$state_file" install_phase) == complete ]]
+[[ $(json_value "$state_file" installed_source_version) == 7.0.0-30.30 ]]
+[[ -z $(json_value "$state_file" last_install_error) ]]
+[[ ! -d $test_root/var/lib/s4lockdown-update/available ]]
 
 printf 'POLICY=manual\n' > "$test_root/etc/s4lockdown-update.conf"
 run_update check --source-version 7.0.0-30.30 --source-dir "$release_30" \

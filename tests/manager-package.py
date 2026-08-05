@@ -186,6 +186,29 @@ class ManagerPackageTests(unittest.TestCase):
                 "ReadWritePaths=/var/lib/s4lockdown-update/update.lock\n", source
             )
 
+        manager_unit = (
+            REPO_ROOT / "config/systemd/s4lockdown-update-manager-check.service"
+        ).read_text(encoding="utf-8")
+        self.assertIn("check --force --wait-for-lock\n", manager_unit)
+        self.assertIn("TimeoutStartSec=2h\n", manager_unit)
+        self.assertNotIn("Conflicts=s4lockdown-update-check.service", manager_unit)
+        controller_installer = (
+            REPO_ROOT / "scripts/install-update-controller.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("systemctl reset-failed", controller_installer)
+        self.assertIn("s4lockdown-update-manager-check.service", controller_installer)
+
+    def test_package_retry_resumes_configuration_when_archives_are_installed(self) -> None:
+        installer = (REPO_ROOT / "scripts" / "install-signed-packages.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("package_installed_exactly", installer)
+        self.assertIn("resuming configuration", installer)
+        self.assertIn(
+            '"$repo_root/scripts/set-default-kernel.sh" "$kernel_release"',
+            installer,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

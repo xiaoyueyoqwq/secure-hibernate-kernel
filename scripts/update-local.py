@@ -45,6 +45,7 @@ MAX_ASSET_BYTES = 4 * 1024 * 1024 * 1024
 MAX_RELEASE_BYTES = 6 * 1024 * 1024 * 1024
 MAX_RELEASE_ASSETS = 32
 COPY_BLOCK_BYTES = 1024 * 1024
+LOCK_WAIT_SECONDS = 2 * 60 * 60
 ProgressCallback = Callable[[int, int, str], None]
 PhaseCallback = Callable[[str], None]
 CHECK_PHASES = {
@@ -146,9 +147,8 @@ def run(
     except FileNotFoundError:
         fail(f"Required command not found: {command[0]}")
     except subprocess.CalledProcessError as error:
-        detail = ""
-        if error.stderr:
-            detail = error.stderr.decode("utf-8", "replace").strip()
+        output = error.stderr or error.stdout or b""
+        detail = output.decode("utf-8", "replace").strip()[-16_384:]
         fail(detail or f"Command failed with status {error.returncode}: {command[0]}")
 
 
@@ -403,7 +403,7 @@ def resolve_version(resolver: Path, requested: str) -> dict[str, str]:
 
 
 @contextmanager
-def update_lock(path: Path) -> Iterator[None]:
+def update_lock(path: Path, *, wait: bool = False) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(
         path,
@@ -414,10 +414,17 @@ def update_lock(path: Path) -> Iterator[None]:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             fail(f"Updater lock must be a regular file: {path}")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise LockBusy("Another s4lockdown update operation is active")
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not wait:
+                    raise LockBusy("Another s4lockdown update operation is active")
+                if time.monotonic() >= deadline:
+                    fail("Timed out waiting for another s4lockdown update operation")
+                time.sleep(0.5)
         yield
     finally:
         os.close(descriptor)
@@ -815,7 +822,10 @@ def check_command(arguments: argparse.Namespace) -> int:
     tag: str | None = None
 
     try:
-        with update_lock(runtime_lock_path(cache_dir, state_dir, testing)):
+        with update_lock(
+            runtime_lock_path(cache_dir, state_dir, testing),
+            wait=arguments.wait_for_lock,
+        ):
             cleanup_stale_paths(
                 cache_dir,
                 (
@@ -847,7 +857,17 @@ def check_command(arguments: argparse.Namespace) -> int:
                 installed_versions.append(recorded_installed)
             installed = highest_version(installed_versions)
 
-            if installed and version_compare(candidate, "le", installed):
+            installation_already_recorded = (
+                isinstance(recorded_installed, str)
+                and version_compare(candidate, "eq", recorded_installed)
+            )
+            if installed and (
+                version_compare(candidate, "lt", installed)
+                or (
+                    version_compare(candidate, "eq", installed)
+                    and installation_already_recorded
+                )
+            ):
                 if partial.exists():
                     remove_path(partial)
                 status = (
@@ -1264,7 +1284,17 @@ def install_command(arguments: argparse.Namespace) -> int:
                     f"Ubuntu HWE candidate: {candidate} != "
                     f"{expected['source_package_version']}"
                 )
-            if installed and version_compare(candidate, "le", installed):
+            installation_already_recorded = (
+                isinstance(recorded, str)
+                and version_compare(candidate, "eq", recorded)
+            )
+            if installed and (
+                version_compare(candidate, "lt", installed)
+                or (
+                    version_compare(candidate, "eq", installed)
+                    and installation_already_recorded
+                )
+            ):
                 if incoming:
                     shutil.rmtree(incoming)
                     incoming = None
@@ -1322,12 +1352,15 @@ def install_command(arguments: argparse.Namespace) -> int:
             running_kernel = os.uname().release
             record_install_progress(root_state_path, "installing-packages")
             try:
-                run([
-                    str(package_tool),
-                    "--install-only",
-                    str(candidate_dir),
-                    str(certificate),
-                ])
+                run(
+                    [
+                        str(package_tool),
+                        "--install-only",
+                        str(candidate_dir),
+                        str(certificate),
+                    ],
+                    capture=True,
+                )
             except UpdateError as error:
                 update_json(
                     root_state_path,
@@ -1378,6 +1411,7 @@ def install_command(arguments: argparse.Namespace) -> int:
                     "install_progress": INSTALL_PROGRESS["complete"],
                     "install_updated_at": now(),
                     "reboot_required": True,
+                    "last_install_error": None,
                     "available_source_version": None,
                     "available_kernel_release": None,
                     "available_release_tag": None,
@@ -1436,6 +1470,7 @@ def parse_arguments() -> argparse.Namespace:
     check.add_argument("--source-dir")
     check.add_argument("--installed-source-version")
     check.add_argument("--force", action="store_true")
+    check.add_argument("--wait-for-lock", action="store_true")
 
     install = subparsers.add_parser("install", help="re-verify and process a staged update")
     install.add_argument("--force", action="store_true")
