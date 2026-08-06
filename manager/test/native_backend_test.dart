@@ -946,4 +946,57 @@ void main() {
     expect(current.rebootRequired, isFalse);
     expect(current.lastCheckStatus, 'current');
   });
+
+  test('uses a verified same-source variant check state', () {
+    final variant = <String, dynamic>{
+      'status': 'verified',
+      'candidate_source_version': '7.0.0-29.29',
+      'kernel_release': '7.0.12-29-vmstat-hibernate',
+    };
+    expect(
+      shouldUseUpdaterCheckState(
+        checkState: variant,
+        installedSourceVersion: '7.0.0-29.29',
+        installedKernelRelease: '7.0.12-29-hibernate',
+        rebootRequired: false,
+        rootAvailableSource: null,
+        rootStatus: 'current',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldUseUpdaterCheckState(
+        checkState: {
+          ...variant,
+          'kernel_release': '7.0.12-29-hibernate',
+        },
+        installedSourceVersion: '7.0.0-29.29',
+        installedKernelRelease: '7.0.12-29-hibernate',
+        rebootRequired: false,
+        rootAvailableSource: null,
+        rootStatus: 'current',
+      ),
+      isFalse,
+    );
+  });
+
+  test('adds a verified check-state kernel to available kernels', () {
+    final kernels = includeAvailableKernel(
+      const [
+        KernelInfo(
+          id: 'active',
+          version: '7.0.12-29-hibernate',
+          project: true,
+          status: KernelStatus.active,
+        ),
+      ],
+      '7.0.12-29-vmstat-hibernate',
+      '2026-08-06T15:50:03Z',
+    );
+
+    expect(kernels, hasLength(2));
+    expect(kernels.last.status, KernelStatus.available);
+    expect(kernels.last.version, '7.0.12-29-vmstat-hibernate');
+    expect(kernels.last.releaseDate, '2026-08-06');
+  });
 }

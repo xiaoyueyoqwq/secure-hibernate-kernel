@@ -407,3 +407,7 @@
   the generated `patch-tags.txt`, install it beside `scripts/`, and fail update
   version resolution when neither source patches nor installed metadata exists.
   Advance the Manager package version whenever this patch-tag metadata changes.
+- A Manager check-state candidate can share the installed Ubuntu source version
+  while naming a newer patch-variant kernel. Compare the kernel releases before
+  treating a same-source verified state as stale, and include an authoritative
+  check-state kernel in the available-kernel list.

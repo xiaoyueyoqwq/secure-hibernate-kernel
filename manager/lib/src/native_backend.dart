@@ -622,26 +622,21 @@ class NativeManagerBackend implements ManagerBackend {
       _nullableString(state['last_check_status']),
     );
     final candidate = _nullableString(checkState['candidate_source_version']);
-    final candidateAlreadyInstalled =
-        candidate != null && candidate == installedSourceVersion;
     final rootAvailableSource =
         _nullableString(state['available_source_version']);
-    final rootHasCurrentCandidate = candidate != null &&
-        rootAvailableSource != null &&
-        candidate == rootAvailableSource;
     final rootStatus = reboot.lastCheckStatus;
-    final rootCandidateStatus = {
-      'update-available',
-      'package-manager-busy',
-      'install-failed',
-    }.contains(rootStatus);
-    final useCheckState = !candidateAlreadyInstalled &&
-        !reboot.rebootRequired &&
-        !(rootHasCurrentCandidate && rootCandidateStatus);
     final checkStateReady = {
       'verified',
       'already-staged',
     }.contains(checkState['status']);
+    final useCheckState = shouldUseUpdaterCheckState(
+      checkState: checkState,
+      installedSourceVersion: installedSourceVersion,
+      installedKernelRelease: installedRelease,
+      rebootRequired: reboot.rebootRequired,
+      rootAvailableSource: rootAvailableSource,
+      rootStatus: rootStatus,
+    );
     final lastCheckStatus = useCheckState
         ? _nullableString(checkState['status']) ?? reboot.lastCheckStatus
         : reboot.lastCheckStatus;
@@ -683,6 +678,11 @@ class NativeManagerBackend implements ManagerBackend {
           : null,
       projectKernelHistory: await _readProjectKernelHistory(warnings),
     );
+    final kernels = includeAvailableKernel(
+      installed.kernels,
+      updater.availableKernelRelease,
+      updater.lastCheckedAt,
+    );
     const diagnosticOrder = [
       'running-kernel',
       'secure-boot',
@@ -709,7 +709,7 @@ class NativeManagerBackend implements ManagerBackend {
         grubUpdated: grubUpdated,
         projectHeadersInstalled: installed.projectHeadersInstalled,
       ),
-      kernels: installed.kernels,
+      kernels: kernels,
       preflightDiagnostics: diagnostics,
       updater: updater,
       warnings: warnings,
@@ -1653,6 +1653,57 @@ RebootStatus resolveRebootStatus(
             ? 'current'
             : lastCheckStatus,
   );
+}
+
+bool shouldUseUpdaterCheckState({
+  required Map<String, dynamic> checkState,
+  required String? installedSourceVersion,
+  required String? installedKernelRelease,
+  required bool rebootRequired,
+  required String? rootAvailableSource,
+  required String? rootStatus,
+}) {
+  final candidate = _nullableString(checkState['candidate_source_version']);
+  final checkStatus = _nullableString(checkState['status']);
+  final checkKernel = _nullableString(checkState['kernel_release']);
+  final ready = {'verified', 'already-staged'}.contains(checkStatus);
+  final candidateAlreadyInstalled =
+      candidate != null && candidate == installedSourceVersion;
+  final staleInstalledRelease = candidateAlreadyInstalled &&
+      ready &&
+      (checkKernel == null || checkKernel == installedKernelRelease);
+  final rootHasCurrentCandidate = candidate != null &&
+      rootAvailableSource != null &&
+      candidate == rootAvailableSource;
+  final rootCandidateStatus = {
+    'update-available',
+    'package-manager-busy',
+    'install-failed',
+  }.contains(rootStatus);
+  return !staleInstalledRelease &&
+      !rebootRequired &&
+      !(rootHasCurrentCandidate && rootCandidateStatus);
+}
+
+List<KernelInfo> includeAvailableKernel(
+  List<KernelInfo> kernels,
+  String? availableRelease,
+  String? checkedAt,
+) {
+  if (availableRelease == null ||
+      kernels.any((kernel) => kernel.version == availableRelease)) {
+    return kernels;
+  }
+  return [
+    ...kernels,
+    KernelInfo(
+      id: 'available-$availableRelease',
+      version: availableRelease,
+      project: true,
+      status: KernelStatus.available,
+      releaseDate: _datePrefix(checkedAt),
+    ),
+  ];
 }
 
 Future<T> _capture<T>(
