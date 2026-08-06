@@ -137,12 +137,13 @@ class ManagerPackageTests(unittest.TestCase):
         for dependency in (
             "cryptsetup-bin",
             "dracut-core",
+            "gir1.2-notify-0.7",
             "libgtk-3-0t64 | libgtk-3-0",
-            "libnotify-bin",
             "libtss2-tcti-device0t64 | libtss2-tcti-device0",
             "mokutil",
             "pkexec",
             "polkitd",
+            "python3-gi",
             "systemd-cryptsetup",
             "tpm-udev",
             "tpm2-tools",
@@ -153,6 +154,15 @@ class ManagerPackageTests(unittest.TestCase):
     def test_desktop_update_notification_monitor_is_packaged(self) -> None:
         helper = MANAGER_ROOT / "scripts/desktop-update-notify.py"
         self.assertTrue(helper.is_file())
+        helper_source = helper.read_text(encoding="utf-8")
+        self.assertIn(
+            'NOTIFICATION_ICON = "software-update-available"',
+            helper_source,
+        )
+        self.assertIn('"desktop-entry",', helper_source)
+        self.assertIn('GLib.Variant("s", APP_ID)', helper_source)
+        self.assertNotIn("notify-send", helper_source)
+        self.assertNotIn("libnotify-bin", self.build_script)
         self.assertIn("desktop-update-notify.py", self.build_script)
         for unit in (
             "secure-hibernate-update-notify.path",

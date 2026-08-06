@@ -421,3 +421,7 @@
   D-Bus session, deduplicate each Manager version and kernel release in
   mode-0600 user state, and activate the fixed single-instance `--updates`
   route so an existing window is presented on the updates page.
+- Publish actionable desktop notifications through Python GI/libnotify, not
+  the AppArmor-confined `notify-send` binary. Use the native
+  `software-update-available` icon and set the `desktop-entry` hint to the
+  production Manager application ID so GNOME resolves the notification source.

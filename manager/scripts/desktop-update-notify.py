@@ -12,9 +12,13 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 from pathlib import Path
 from typing import Any, Callable
+
+import gi
+
+gi.require_version("Notify", "0.7")
+from gi.repository import GLib, Notify
 
 
 APP_ID = "io.github.xiaoyueyoqwq.secure-hibernate-manager"
@@ -26,7 +30,7 @@ MANAGER_VERSION = re.compile(
     r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9]+)?$"
 )
 KERNEL_RELEASE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]*$")
-NOTIFY_SEND = "/usr/bin/notify-send"
+NOTIFICATION_ICON = "software-update-available"
 MANAGER_EXECUTABLE = "/usr/bin/secure-hibernate-manager"
 NOTIFICATION_WAIT_SECONDS = 20
 
@@ -149,28 +153,96 @@ def update_candidates() -> list[tuple[str, str, str, str]]:
     return candidates
 
 
-def show_notification(
-    title: str,
-    body: str,
+def deliver_notifications(
+    pending: list[tuple[str, str, str, str]],
     action_label: str,
-) -> subprocess.Popen[str]:
-    return subprocess.Popen(
-        [
-            NOTIFY_SEND,
-            f"--app-name={APP_NAME}",
-            f"--icon={APP_ID}",
-            "--urgency=normal",
-            "--expire-time=15000",
-            f"--action=default={action_label}",
-            "--wait",
-            title,
-            body,
-        ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    on_activate: Callable[[], None] | None,
+) -> tuple[set[tuple[str, str]], bool, bool]:
+    successful: set[tuple[str, str]] = set()
+    activated = False
+    failed = False
+    loop = GLib.MainLoop()
+    timed_out = False
+
+    def activate(
+        _notification: Notify.Notification,
+        action: str,
+        _user_data: object,
+    ) -> None:
+        nonlocal activated
+        if action != "default" or activated:
+            return
+        activated = True
+        if on_activate is not None:
+            try:
+                on_activate()
+            except OSError as error:
+                print(
+                    f"Could not activate Secure Hibernate Manager: {error}",
+                    file=sys.stderr,
+                )
+        loop.quit()
+
+    def stop_waiting() -> bool:
+        nonlocal timed_out
+        timed_out = True
+        loop.quit()
+        return GLib.SOURCE_REMOVE
+
+    if not pending:
+        return successful, activated, failed
+    if not Notify.init(APP_NAME):
+        print("Could not initialize the desktop notification service", file=sys.stderr)
+        return successful, activated, True
+
+    notifications: list[Notify.Notification] = []
+    try:
+        capabilities = set(Notify.get_server_caps() or ())
+        if "actions" not in capabilities:
+            print("Desktop notification actions are not supported", file=sys.stderr)
+            return successful, activated, True
+
+        for kind, version, title, body in pending:
+            notification = Notify.Notification.new(
+                title,
+                body,
+                NOTIFICATION_ICON,
+            )
+            notification.set_hint(
+                "desktop-entry",
+                GLib.Variant("s", APP_ID),
+            )
+            notification.set_urgency(Notify.Urgency.NORMAL)
+            notification.set_timeout(15000)
+            notification.add_action("default", action_label, activate, None)
+            try:
+                shown = notification.show()
+            except GLib.Error as error:
+                failed = True
+                print(f"Could not show desktop notification: {error}", file=sys.stderr)
+                continue
+            if not shown:
+                failed = True
+                print("Could not show desktop notification", file=sys.stderr)
+                continue
+            notifications.append(notification)
+            successful.add((kind, version))
+
+        if successful:
+            timeout_source = GLib.timeout_add_seconds(
+                NOTIFICATION_WAIT_SECONDS,
+                stop_waiting,
+            )
+            loop.run()
+            if not timed_out:
+                GLib.source_remove(timeout_source)
+    except GLib.Error as error:
+        failed = True
+        print(f"Desktop notification service failed: {error}", file=sys.stderr)
+    finally:
+        notifications.clear()
+        Notify.uninit()
+    return successful, activated, failed
 
 
 def publish(
@@ -186,52 +258,10 @@ def publish(
         os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW,
         0o600,
     )
-    pending: list[tuple[str, str, subprocess.Popen[str]]] = []
+    pending: list[tuple[str, str, str, str]] = []
     activated = False
     failed = False
-    activation_lock = threading.Lock()
     successful: set[tuple[str, str]] = set()
-
-    def wait_for_action(
-        kind: str,
-        version: str,
-        process: subprocess.Popen[str],
-    ) -> None:
-        nonlocal activated, failed
-        timed_out = False
-        try:
-            stdout, stderr = process.communicate(timeout=NOTIFICATION_WAIT_SECONDS)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            process.terminate()
-            try:
-                stdout, stderr = process.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                stdout, stderr = process.communicate()
-        if process.returncode != 0 and not timed_out:
-            with activation_lock:
-                failed = True
-            print(
-                stderr.strip() or f"notify-send exited with status {process.returncode}",
-                file=sys.stderr,
-            )
-            return
-        with activation_lock:
-            successful.add((kind, version))
-        if stdout.strip() != "default":
-            return
-        with activation_lock:
-            first_activation = not activated
-            activated = True
-        if first_activation and on_activate is not None:
-            try:
-                on_activate()
-            except OSError as error:
-                print(
-                    f"Could not activate Secure Hibernate Manager: {error}",
-                    file=sys.stderr,
-                )
 
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
@@ -246,20 +276,13 @@ def publish(
         for kind, version, title, body in candidates:
             if notified.get(kind) == version:
                 continue
-            pending.append((
-                kind,
-                version,
-                show_notification(title, body, action_label),
-            ))
+            pending.append((kind, version, title, body))
 
-        threads = [
-            threading.Thread(target=wait_for_action, args=notification)
-            for notification in pending
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
+        successful, activated, failed = deliver_notifications(
+            pending,
+            action_label,
+            on_activate,
+        )
 
         for kind, version in successful:
             notified[kind] = version
