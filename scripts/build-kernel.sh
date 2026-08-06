@@ -32,11 +32,17 @@ fi
 abi_version="${source_name}-${abi_number}"
 
 if [[ $local_version == auto ]]; then
-	local_version="-${abi_number}-hibernate"
+	patch_tags=$("$repo_root/scripts/patch-tags.sh")
+	local_version="-${abi_number}${patch_tags}-hibernate"
 fi
 
 if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
 	printf 'LOCAL_VERSION must begin with "-" and contain package-safe characters.\n' >&2
+	exit 2
+fi
+
+if [[ ${#local_version} -gt 60 ]]; then
+	printf 'LOCAL_VERSION is too long for the kernel release string: %s\n' "$local_version" >&2
 	exit 2
 fi
 
@@ -85,8 +91,22 @@ fi
 tar -xf "$source_archive" -C "$work_dir"
 source_tree="$work_dir/linux-source-$source_name"
 
-patch -d "$source_tree" -p1 --forward \
-	< "$repo_root/patches/0001-power-hibernate-allow-lockdown-opt-in.patch"
+for patch_file in "$repo_root"/patches/*.patch; do
+	[[ -f $patch_file ]] || continue
+	guard_file="${patch_file%.patch}.guard"
+	if [[ -f $guard_file ]]; then
+		guard_path=$(sed -n '1p' "$guard_file")
+		guard_pattern=$(sed -n '2p' "$guard_file")
+		if [[ -n $guard_path && -n $guard_pattern ]] &&
+			grep -q -- "$guard_pattern" "$source_tree/$guard_path"; then
+			printf 'Skipping %s: %s already contains %s\n' \
+				"$(basename "$patch_file")" "$guard_path" "$guard_pattern"
+			continue
+		fi
+	fi
+	printf 'Applying %s\n' "$(basename "$patch_file")"
+	patch -d "$source_tree" -p1 --forward < "$patch_file"
+done
 cp "$base_config" "$source_tree/.config"
 
 "$source_tree/scripts/config" --file "$source_tree/.config" \

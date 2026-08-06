@@ -18,6 +18,7 @@ fi
 requested_source=${1:-auto}
 requested_local=${2:-auto}
 meta_package=${KERNEL_META_PACKAGE:-linux-image-generic-hwe-26.04}
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 candidate_version() {
 	local package=$1
@@ -61,7 +62,8 @@ abi_version="${source_name}-${abi_number}"
 local_version=$requested_local
 
 if [[ $local_version == auto ]]; then
-	local_version="-${abi_number}-hibernate"
+	patch_tags=$("$repo_root/scripts/patch-tags.sh")
+	local_version="-${abi_number}${patch_tags}-hibernate"
 fi
 if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
 	printf 'LOCAL_VERSION must begin with "-" and contain package-safe characters.\n' >&2

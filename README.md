@@ -83,7 +83,9 @@ Run the `Build Ubuntu hibernation kernel` workflow with `auto`, or supply an
 exact Ubuntu source package version. Kernel releases mirror the Ubuntu ABI and
 flavor layout in a suffix such as `-28-hibernate` (upstream version, ABI
 number, project flavor), so new project and official kernels install alongside
-one another.
+one another. Extra project patches are appended as patch tags between the ABI
+number and the flavor, e.g. `7.0.12-29-vmstat-hibernate`, so the applied
+patch set is visible in `uname -r`.
 
 The workflow separates trust domains:
 

@@ -89,6 +89,13 @@
   Release generation uses this form; `-ubuntu<N>-s4lockdown` remains the
   immutable kernel name of the published `ubuntu-7.0.0-28.28` first Release.
   Detection code (updater, Manager, GRUB, installer) must accept both suffixes.
+- Extra project patches are reflected in the local version as
+  `<upstream>-<abi>-<patch-tags>-hibernate` (e.g. `7.0.12-29-vmstat-hibernate`),
+  keeping the `-hibernate` suffix terminal so all detection code keeps working.
+  `scripts/patch-tags.sh` derives the tags from `patches/NNNN-<tag>-*.patch`
+  file names; the special tag `hibernate` stays at the end. When Ubuntu
+  backports a guarded patch upstream, delete both the `.patch` and its
+  `.guard` file so the tag disappears from future builds.
 - Automatic first installation from `ubuntu-7.0.0-28.28` must remain limited to
   the canonical repository and an embedded exact commit, asset-name, size, and
   SHA-256 snapshot. Repeat this verification on both sides of the root copy

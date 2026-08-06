@@ -1,0 +1,29 @@
+Fix vmstat_shepherd double-scheduling of a running vmstat_update.
+
+vmstat_shepherd uses delayed_work_pending() to check whether
+vmstat_update is already scheduled for a given CPU before queuing it.
+delayed_work_pending() only tests WORK_STRUCT_PENDING_BIT, which is
+cleared the moment a worker thread picks up the work to execute it.
+While vmstat_update is actively running, the shepherd can therefore
+queue a second invocation when need_update() is still true, arming a
+zero-delay timer for a work that is already executing.  When that timer
+expires, delayed_work_timer_fn() -> __queue_work() finds a non-empty
+work->entry, warns (kernel/workqueue.c: WARN_ON(!list_empty(&work->entry)))
+and drops the work, leaving per-CPU vmstat updates stuck and eventually
+hanging the system.
+
+Use work_busy() instead, which covers both WORK_BUSY_PENDING and
+WORK_BUSY_RUNNING states.  Upstream fix d725f0664b70 ("mm/vmstat: fix
+vmstat_shepherd double-scheduling vmstat_update", 2026-04-08).
+
+diff --git a/mm/vmstat.c b/mm/vmstat.c
+--- a/mm/vmstat.c
++++ b/mm/vmstat.c
+@@ -2142,7 +2142,7 @@ static void vmstat_shepherd(struct work_struct *w)
+ 			if (cpu_is_isolated(cpu))
+ 				continue;
+ 
+-			if (!delayed_work_pending(dw) && need_update(cpu))
++			if (!work_busy(&dw->work) && need_update(cpu))
+ 				queue_delayed_work_on(cpu, mm_percpu_wq, dw, 0);
+ 		}
