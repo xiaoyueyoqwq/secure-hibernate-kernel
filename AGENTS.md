@@ -68,7 +68,11 @@
   --query` in the user's terminal when no desktop ask-password agent is active.
 - Run `bash -n`, ShellCheck, actionlint, `tests/resolve-version.sh`,
   `git diff --check`, systemd unit verification, and package signature checks
-  after changing the maintenance chain.
+  after changing the maintenance chain. Verify a published Release with
+  `scripts/release-manifest.py verify` (or its exact `openssl cms` argument
+  set with `-binary -nointern -purpose any`); the project certificate is a
+  Code Signing EKU certificate, so default-purpose CMS checks reject it
+  regardless of signature validity.
 - Keep release-policy and signing-security regression tests wired into the
   GitHub Actions script-check step; a test file that CI never invokes does not
   protect the release chain.
