@@ -147,6 +147,29 @@ class ManagerPackageTests(unittest.TestCase):
         self.assertIn("flutter build linux --release --no-pub", self.build_script)
         self.assertIn('--dart-define="MANAGER_VERSION=$version"', self.build_script)
 
+    def test_controller_installer_manifest_matches_packaging_manifest(self) -> None:
+        packaged = set(re.findall(
+            r"(?m)^\t([a-z0-9.-]+\.(?:sh|py|pl))$",
+            self.build_script,
+        ))
+        installer = (
+            REPO_ROOT / "scripts" / "install-update-controller.sh"
+        ).read_text(encoding="utf-8")
+        match = re.search(
+            r"for script in (.*?); do",
+            installer,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        installed = {
+            name for name in match.group(1).split()
+            if not name.startswith("\\")
+        }
+        self.assertEqual(
+            installed,
+            packaged - {"install-update-controller.sh"},
+        )
+
     def test_postinst_is_fixed_and_valid(self) -> None:
         match = re.search(
             r"cat >\"\$package_root/DEBIAN/postinst\" <<'EOF'\n(.*?)\nEOF",

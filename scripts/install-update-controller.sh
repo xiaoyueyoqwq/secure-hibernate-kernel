@@ -112,8 +112,8 @@ install -d -o root -g root -m 0755 \
 	"$install_root/config/polkit" "$install_root/config/systemd" \
 	"$install_root/config/systemd/systemd-hibernate.service.d"
 for script in extract-module-signature.pl install-signed-packages.sh \
-	install-system-config.sh manager-helper.py release-manifest.py \
-	resolve-version.sh set-default-kernel.sh \
+	install-system-config.sh manager-helper.py patch-tags.sh \
+	release-manifest.py resolve-version.sh set-default-kernel.sh \
 	update-local.py update-local.sh verify-module-signatures.sh; do
 	install -o root -g root -m 0755 "$repo_root/scripts/$script" \
 		"$install_root/scripts/$script"
