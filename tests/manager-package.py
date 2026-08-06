@@ -98,6 +98,14 @@ class ManagerPackageTests(unittest.TestCase):
             '"$package_root$app_root/resources/backend/config/"',
             self.build_script,
         )
+        self.assertIn(
+            '"$repo_root/scripts/patch-tags.sh"',
+            self.build_script,
+        )
+        self.assertIn(
+            '"$package_root$app_root/resources/backend/patch-tags.txt"',
+            self.build_script,
+        )
         self.assertIn("Refusing symbolic links", self.build_script)
 
     def test_redistribution_licenses_are_packaged(self) -> None:
@@ -168,6 +176,10 @@ class ManagerPackageTests(unittest.TestCase):
         self.assertEqual(
             installed,
             packaged - {"install-update-controller.sh"},
+        )
+        self.assertIn(
+            'mv -fT -- "$patch_tags_temp" "$install_root/patch-tags.txt"',
+            installer,
         )
 
     def test_postinst_is_fixed_and_valid(self) -> None:

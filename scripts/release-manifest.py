@@ -119,17 +119,13 @@ def acceptable_tags(source_version: str) -> tuple[str, ...]:
     base = expected_tag(source_version)
     suffixes = ("",)
     script = Path(__file__).resolve().parent / "patch-tags.sh"
-    patches_dir = os.environ.get(
-        "PATCHES_DIR",
-        str(Path(__file__).resolve().parent.parent / "patches"),
-    )
-    if not script.is_file() or not Path(patches_dir).is_dir():
+    if not script.is_file():
         return (base,)
     result = subprocess.run(
         [str(script)],
         capture_output=True,
         text=True,
-        env={**os.environ, "PATCHES_DIR": patches_dir},
+        env=os.environ,
     )
     if result.returncode != 0:
         fail(f"Could not resolve patch tags for Release tag validation: {result.stderr.strip()}")

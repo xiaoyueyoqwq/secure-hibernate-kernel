@@ -97,6 +97,8 @@ for script in "${scripts[@]}"; do
 	install -m 0755 "$repo_root/scripts/$script" \
 		"$package_root$app_root/resources/backend/scripts/$script"
 done
+"$repo_root/scripts/patch-tags.sh" \
+	> "$package_root$app_root/resources/backend/patch-tags.txt"
 
 if [[ -n $(find "$repo_root/config" -type l -print -quit) ]]; then
 	printf 'Refusing symbolic links in the packaged configuration tree.\n' >&2

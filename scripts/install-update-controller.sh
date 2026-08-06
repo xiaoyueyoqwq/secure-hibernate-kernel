@@ -20,13 +20,14 @@ update_user=s4lockdown-update
 
 for command in apt-cache awk cmp cryptsetup dpkg dpkg-deb dpkg-query dracut find \
 	findmnt flock fuser getent grep install lsblk modinfo mokutil nproc openssl \
-	perl python3 sbverify systemctl systemd-analyze systemd-ask-password \
+	mktemp mv perl python3 rm sbverify systemctl systemd-analyze systemd-ask-password \
 	systemd-cryptenroll tpm2 update-grub useradd wall xz zstd; do
 	command -v "$command" >/dev/null || {
 		printf 'Required command not found: %s\n' "$command" >&2
 		exit 1
 	}
 done
+patch_tags=$("$repo_root/scripts/patch-tags.sh")
 
 if getent passwd "$update_user" >/dev/null; then
 	IFS=: read -r _ _ update_uid update_gid _ update_home update_shell \
@@ -67,7 +68,11 @@ if systemctl is-active --quiet s4lockdown-update.timer; then
 	timer_was_active=true
 fi
 installation_complete=false
+patch_tags_temp=
 restore_timer_on_failure() {
+	if [[ -n $patch_tags_temp ]]; then
+		rm -f -- "$patch_tags_temp"
+	fi
 	if [[ $installation_complete != true && $timer_was_active == true ]]; then
 		systemctl start s4lockdown-update.timer >/dev/null 2>&1 || true
 	fi
@@ -111,6 +116,12 @@ install -d -o root -g root -m 0755 \
 	"$install_root/config/grub" "$install_root/config/logind" \
 	"$install_root/config/polkit" "$install_root/config/systemd" \
 	"$install_root/config/systemd/systemd-hibernate.service.d"
+patch_tags_temp=$(mktemp "$install_root/.patch-tags.XXXXXX")
+printf '%s\n' "$patch_tags" > "$patch_tags_temp"
+chown root:root "$patch_tags_temp"
+chmod 0644 "$patch_tags_temp"
+mv -fT -- "$patch_tags_temp" "$install_root/patch-tags.txt"
+patch_tags_temp=
 for script in extract-module-signature.pl install-signed-packages.sh \
 	install-system-config.sh manager-helper.py patch-tags.sh \
 	release-manifest.py resolve-version.sh set-default-kernel.sh \

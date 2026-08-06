@@ -403,3 +403,7 @@
   label before execution. Keep the icon and label in one control and animate
   the control width so the confirmation state is understandable without
   relying on an undocumented second-click convention.
+- The installed update controller has no repository `patches/` tree. Package
+  the generated `patch-tags.txt`, install it beside `scripts/`, and fail update
+  version resolution when neither source patches nor installed metadata exists.
+  Advance the Manager package version whenever this patch-tag metadata changes.

@@ -9,9 +9,22 @@ set -euo pipefail
 # The special tag "hibernate" names the project's own kernel flavor and is
 # always placed at the end of the local version instead.
 
-patches_dir=${PATCHES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/patches}
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+patches_dir=${PATCHES_DIR:-$repo_root/patches}
+tags_file=${PATCH_TAGS_FILE:-$repo_root/patch-tags.txt}
 
 if [[ ! -d $patches_dir ]]; then
+	if [[ -L $tags_file || ! -f $tags_file ]]; then
+		printf 'Patch metadata is unavailable: %s\n' "$tags_file" >&2
+		exit 1
+	fi
+	mapfile -t stored_tags < "$tags_file"
+	if (( ${#stored_tags[@]} != 1 )) ||
+		[[ ! ${stored_tags[0]} =~ ^(-[a-zA-Z0-9]+)*$ ]]; then
+		printf 'Invalid patch metadata: %s\n' "$tags_file" >&2
+		exit 1
+	fi
+	printf '%s\n' "${stored_tags[0]}"
 	exit 0
 fi
 
