@@ -63,6 +63,7 @@ class ManagerPackageTests(unittest.TestCase):
             "install-system-config.sh",
             "install-update-controller.sh",
             "manager-helper.py",
+            "patch-tags.sh",
             "release-manifest.py",
             "resolve-version.sh",
             "set-default-kernel.sh",
