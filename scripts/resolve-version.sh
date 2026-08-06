@@ -60,9 +60,9 @@ fi
 
 abi_version="${source_name}-${abi_number}"
 local_version=$requested_local
+patch_tags=$("$repo_root/scripts/patch-tags.sh")
 
 if [[ $local_version == auto ]]; then
-	patch_tags=$("$repo_root/scripts/patch-tags.sh")
 	local_version="-${abi_number}${patch_tags}-hibernate"
 fi
 if [[ ! $local_version =~ ^-[a-zA-Z0-9][a-zA-Z0-9.+~-]*$ ]]; then
@@ -75,4 +75,4 @@ printf 'source_name=%s\n' "$source_name"
 printf 'abi_version=%s\n' "$abi_version"
 printf 'abi_number=%s\n' "$abi_number"
 printf 'local_version=%s\n' "$local_version"
-printf 'marker_tag=ubuntu-%s\n' "${source_package_version//\~/_}"
+printf 'marker_tag=ubuntu-%s%s\n' "${source_package_version//\~/_}" "$patch_tags"

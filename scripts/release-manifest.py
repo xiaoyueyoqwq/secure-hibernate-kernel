@@ -112,6 +112,33 @@ def expected_tag(source_version: str) -> str:
     return f"ubuntu-{source_version.replace('~', '_')}"
 
 
+def acceptable_tags(source_version: str) -> tuple[str, ...]:
+    """Accepted Release tags for a source version: the base tag plus one
+    per declared patch tag (e.g. ubuntu-7.0.0-29.29 and
+    ubuntu-7.0.0-29.29-vmstat), matching the resolver's marker_tag."""
+    base = expected_tag(source_version)
+    suffixes = ("",)
+    script = Path(__file__).resolve().parent / "patch-tags.sh"
+    patches_dir = os.environ.get(
+        "PATCHES_DIR",
+        str(Path(__file__).resolve().parent.parent / "patches"),
+    )
+    if not script.is_file() or not Path(patches_dir).is_dir():
+        return (base,)
+    result = subprocess.run(
+        [str(script)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATCHES_DIR": patches_dir},
+    )
+    if result.returncode != 0:
+        fail(f"Could not resolve patch tags for Release tag validation: {result.stderr.strip()}")
+    tags = result.stdout.strip()
+    if tags:
+        suffixes += (tags,)
+    return tuple(base + suffix for suffix in suffixes)
+
+
 def validate_metadata_values(
     source_version: str, kernel_release: str, release_tag: str, git_commit: str
 ) -> None:
@@ -119,7 +146,7 @@ def validate_metadata_values(
         fail(f"Unsupported Ubuntu source package version: {source_version}")
     if not KERNEL_RELEASE.fullmatch(kernel_release):
         fail(f"Unsupported kernel release: {kernel_release}")
-    if release_tag != expected_tag(source_version):
+    if release_tag not in acceptable_tags(source_version):
         fail(f"Release tag does not match the source version: {release_tag}")
     if not COMMIT.fullmatch(git_commit):
         fail("Git commit must be a lowercase 40-character SHA-1 object ID")

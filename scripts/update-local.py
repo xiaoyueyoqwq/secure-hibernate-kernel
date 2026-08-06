@@ -651,6 +651,62 @@ def download_github_release(
     return True, target if isinstance(target, str) and COMMIT.fullmatch(target) else None
 
 
+def variant_kernel_release(
+    repository: str,
+    tag: str,
+    testing: bool,
+) -> str | None:
+    """Kernel release of the same-source patch-variant Release, if any.
+
+    The variant tag is the marker tag derived from the resolved Ubuntu
+    source version, e.g. ubuntu-7.0.0-29.29-vmstat, so it is never
+    inferred from an unverified source.  The result is advisory only: it
+    decides whether an update is offered, while the staged Release still
+    undergoes full Manifest and package verification before installation.
+    """
+    if testing:
+        variant_dir = os.environ.get("S4LOCKDOWN_TEST_VARIANT_RELEASE")
+        if not variant_dir:
+            return None
+        release_file = Path(variant_dir).resolve() / "kernel-release.txt"
+        if not release_file.is_file():
+            return None
+        release = release_file.read_text(encoding="utf-8").strip()
+        return release or None
+
+    encoded_tag = urllib.parse.quote(tag, safe="")
+    status, content = download_json(
+        f"https://api.github.com/repos/{repository}/releases/tags/{encoded_tag}"
+    )
+    if status == 404:
+        return None
+    try:
+        document = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        fail(f"GitHub Release API returned invalid JSON: {error}")
+    if not isinstance(document, dict):
+        fail("GitHub Release API response is not an object")
+    for asset in document.get("assets", []):
+        if not isinstance(asset, dict):
+            continue
+        name = asset.get("name")
+        url = asset.get("browser_download_url")
+        size = asset.get("size")
+        if name != "kernel-release.txt" or not isinstance(url, str):
+            continue
+        if not isinstance(size, int) or isinstance(size, bool):
+            fail("GitHub variant Release has an invalid kernel-release.txt size")
+        probe_dir = Path(tempfile.mkdtemp(prefix=".variant-probe."))
+        try:
+            probe = probe_dir / "kernel-release.txt"
+            download_asset(url, probe, size, 0, size, None)
+            release = probe.read_text(encoding="utf-8").strip()
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+        return release or None
+    return None
+
+
 def tool_paths() -> tuple[Path, Path, Path, Path]:
     repo_root = Path(__file__).resolve().parent.parent
     return (
@@ -844,6 +900,9 @@ def check_command(arguments: argparse.Namespace) -> int:
             resolved = resolve_version(resolver, arguments.source_version)
             candidate = resolved["source_package_version"]
             tag = resolved["marker_tag"]
+            repository = os.environ.get(
+                "S4LOCKDOWN_GITHUB_REPOSITORY", PROJECT_REPOSITORY
+            )
             partial = cache_dir / f".partial.{tag}"
             for entry in cache_dir.iterdir():
                 if entry.name.startswith(".partial.") and entry != partial:
@@ -861,11 +920,19 @@ def check_command(arguments: argparse.Namespace) -> int:
                 isinstance(recorded_installed, str)
                 and version_compare(candidate, "eq", recorded_installed)
             )
+            variant_update_available = False
+            if installed and installation_already_recorded:
+                recorded_kernel = root_state.get("installed_kernel_release")
+                if isinstance(recorded_kernel, str):
+                    variant = variant_kernel_release(repository, tag, testing)
+                    if variant and compare_kernel_releases(variant, recorded_kernel) < 0:
+                        variant_update_available = True
             if installed and (
                 version_compare(candidate, "lt", installed)
                 or (
                     version_compare(candidate, "eq", installed)
                     and installation_already_recorded
+                    and not variant_update_available
                 )
             ):
                 if partial.exists():
@@ -1001,9 +1068,6 @@ def check_command(arguments: argparse.Namespace) -> int:
                     )
                     release_exists = True
                 else:
-                    repository = os.environ.get(
-                        "S4LOCKDOWN_GITHUB_REPOSITORY", PROJECT_REPOSITORY
-                    )
                     release_exists, expected_commit = download_github_release(
                         repository, tag, staging, record_progress
                     )
@@ -1288,11 +1352,22 @@ def install_command(arguments: argparse.Namespace) -> int:
                 isinstance(recorded, str)
                 and version_compare(candidate, "eq", recorded)
             )
+            variant_update_available = False
+            if installation_already_recorded:
+                recorded_kernel = root_state.get("installed_kernel_release")
+                candidate_kernel = manifest.get("kernel_release")
+                if (
+                    isinstance(recorded_kernel, str)
+                    and isinstance(candidate_kernel, str)
+                    and compare_kernel_releases(candidate_kernel, recorded_kernel) < 0
+                ):
+                    variant_update_available = True
             if installed and (
                 version_compare(candidate, "lt", installed)
                 or (
                     version_compare(candidate, "eq", installed)
                     and installation_already_recorded
+                    and not variant_update_available
                 )
             ):
                 if incoming:

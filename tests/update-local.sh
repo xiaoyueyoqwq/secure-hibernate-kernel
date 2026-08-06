@@ -106,7 +106,8 @@ create_release() {
 	local kernel_release=$2
 	local local_version=$3
 	local git_commit=$4
-	local release_dir="$temp_dir/release-$source_version"
+	local release_tag=${5:-ubuntu-$source_version}
+	local release_dir="$temp_dir/release-$source_version${release_tag#ubuntu-$source_version}"
 	local package_version="1${local_version}+ubuntu${source_version}"
 	local headers_name image_name signed_name
 
@@ -130,7 +131,7 @@ create_release() {
 	"$mock_repo/scripts/release-manifest.py" create "$release_dir" \
 		--source-version "$source_version" \
 		--kernel-release "$kernel_release" \
-		--release-tag "ubuntu-$source_version" \
+		--release-tag "$release_tag" \
 		--git-commit "$git_commit" \
 		--private-key "$signing_key" >/dev/null
 	printf '%s\n' "$release_dir"
@@ -353,3 +354,64 @@ if (( state_failure_status == 0 || install_count_after != install_count_before )
 fi
 
 printf 'local update controller tests passed\n'
+
+# Same-source patch-variant Release: an installed base kernel must be
+# offered the variant (e.g. -29-hibernate -> -29-vmstat-hibernate) even
+# though the Ubuntu source version is unchanged.
+variant_root="$temp_dir/variant-root"
+mkdir -p "$variant_root/etc"
+printf 'POLICY=automatic-install\n' > "$variant_root/etc/s4lockdown-update.conf"
+run_update_root() {
+	env \
+		PATH="$mock_bin:$PATH" \
+		S4LOCKDOWN_TEST_ROOT="$variant_root" \
+		S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES=1 \
+		S4LOCKDOWN_TEST_APT_VERSION=7.0.0-29.29 \
+		S4LOCKDOWN_TEST_PACKAGE_TOOL="$package_tool" \
+		S4LOCKDOWN_TEST_PACKAGE_LOG="$temp_dir/package.log" \
+		"$mock_repo/scripts/update-local.py" "$@"
+}
+run_update_root check --source-version 7.0.0-29.29 \
+	--source-dir "$release_29" >/dev/null
+run_update_root install >/dev/null
+[[ $(json_value "$variant_root/var/lib/s4lockdown-update/state.json" \
+	installed_kernel_release) == 7.0.13-29-hibernate ]]
+
+# From here the mock repository declares the vmstat patch, so the
+# resolver derives the variant Release tag and manifest validation
+# accepts it.
+mkdir -p "$mock_repo/patches"
+: > "$mock_repo/patches/0001-hibernate-base.patch"
+: > "$mock_repo/patches/0002-vmstat-fix-race.patch"
+variant_dir=$(create_release \
+	7.0.0-29.29 7.0.13-29-vmstat-hibernate -29-vmstat-hibernate \
+	4444444444444444444444444444444444444444 \
+	ubuntu-7.0.0-29.29-vmstat)
+
+S4LOCKDOWN_TEST_ROOT="$variant_root" \
+	PATH="$mock_bin:$PATH" \
+	S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES=1 \
+	S4LOCKDOWN_TEST_APT_VERSION=7.0.0-29.29 \
+	S4LOCKDOWN_TEST_PACKAGE_TOOL="$package_tool" \
+	S4LOCKDOWN_TEST_PACKAGE_LOG="$temp_dir/package.log" \
+	S4LOCKDOWN_TEST_VARIANT_RELEASE="$variant_dir" \
+	"$mock_repo/scripts/update-local.py" check \
+	--source-version 7.0.0-29.29 --source-dir "$variant_dir" >/dev/null
+[[ $(json_value "$variant_root/var/cache/s4lockdown-update/check-state.json" \
+	status) == verified ]]
+[[ $(json_value "$variant_root/var/cache/s4lockdown-update/check-state.json" \
+	release_tag) == ubuntu-7.0.0-29.29-vmstat ]]
+
+run_update_root install >/dev/null
+[[ $(json_value "$variant_root/var/lib/s4lockdown-update/state.json" \
+	installed_kernel_release) == 7.0.13-29-vmstat-hibernate ]]
+[[ $(json_value "$variant_root/var/lib/s4lockdown-update/state.json" \
+	installed_source_version) == 7.0.0-29.29 ]]
+
+# Without a variant Release the same installed base kernel is current.
+run_update_root check --source-version 7.0.0-29.29 \
+	--source-dir "$release_29" >/dev/null
+[[ $(json_value "$variant_root/var/cache/s4lockdown-update/check-state.json" \
+	status) == current ]]
+
+printf 'variant Release tests passed\n'

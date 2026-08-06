@@ -40,7 +40,7 @@ assert_output \
 	7.0.0-29.31 \
 	7.0.0-29 \
 	-29-vmstat-hibernate \
-	ubuntu-7.0.0-29.31 \
+	ubuntu-7.0.0-29.31-vmstat \
 	"$fixture_dir"
 
 if "$resolver" 7.0-28.28 auto >/dev/null 2>&1; then

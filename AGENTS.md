@@ -96,6 +96,12 @@
   file names; the special tag `hibernate` stays at the end. When Ubuntu
   backports a guarded patch upstream, delete both the `.patch` and its
   `.guard` file so the tag disappears from future builds.
+- The Release tag is `ubuntu-<source-version>` plus the same patch tags
+  (`ubuntu-7.0.0-29.29-vmstat`), so a same-source patch-variant is a distinct
+  Release and the immutable-asset guard never blocks it. `release-manifest.py`
+  accepts exactly the base and patch-derived tags, nothing else. A published
+  base tag must never be re-published with different assets; create the variant
+  tag instead.
 - Automatic first installation from `ubuntu-7.0.0-28.28` must remain limited to
   the canonical repository and an embedded exact commit, asset-name, size, and
   SHA-256 snapshot. Repeat this verification on both sides of the root copy
@@ -116,6 +122,14 @@
 - The root updater stage must independently resolve the current Ubuntu HWE
   candidate and require an exact source-version and Release-tag match. A signed
   Manifest proves authenticity but does not by itself authorize rollout order.
+- When the installed source version already equals the candidate, the updater
+  checks the same-source patch-variant Release (the resolved marker tag, e.g.
+  `ubuntu-7.0.0-29.29-vmstat`) and offers it when its kernel release is newer
+  than the installed one. The variant probe is advisory: it reads only the
+  unverified `kernel-release.txt` to decide whether an update is offered, while
+  installation still requires full Manifest and package verification of the
+  staged Release. Install must mirror this check so a recorded base kernel is
+  not skipped when a newer variant is staged.
 - The updater may prune only superseded project kernels after a verified update,
   according to `PROJECT_KERNEL_HISTORY=1|2|3`. Always preserve the newly
   installed kernel, the running kernel, every official Ubuntu kernel, and the
