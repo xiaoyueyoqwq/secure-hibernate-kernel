@@ -559,13 +559,13 @@ void main() {
           request.action,
           data: const {
             'installedSourceVersion': '7.0.0-29.29',
-            'installedKernelRelease': '7.0.13-29-hibernate',
+            'installedKernelRelease': '7.0.13-29-vmstat-hibernate',
           },
         ),
       );
       expect(
         result.data.installedKernelRelease,
-        '7.0.13-29-hibernate',
+        '7.0.13-29-vmstat-hibernate',
       );
 
       for (final data in <Map<String, Object?>>[

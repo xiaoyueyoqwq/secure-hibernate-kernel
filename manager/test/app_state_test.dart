@@ -9,6 +9,10 @@ void main() {
       kernelReleaseMeetsMinimum('7.0.12-28-hibernate'),
       isTrue,
     );
+    expect(
+      kernelReleaseMeetsMinimum('7.0.12-29-vmstat-hibernate'),
+      isTrue,
+    );
     expect(kernelReleaseMeetsMinimum('7.1.0-custom'), isTrue);
     expect(kernelReleaseMeetsMinimum('8.0.0'), isTrue);
   });
