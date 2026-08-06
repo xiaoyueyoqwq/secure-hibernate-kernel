@@ -107,7 +107,7 @@ create_release() {
 	local local_version=$3
 	local git_commit=$4
 	local release_tag=${5:-ubuntu-$source_version}
-	local release_dir="$temp_dir/release-$source_version${release_tag#ubuntu-$source_version}"
+	local release_dir="$temp_dir/release-$source_version${release_tag#ubuntu-"$source_version"}"
 	local package_version="1${local_version}+ubuntu${source_version}"
 	local headers_name image_name signed_name
 
