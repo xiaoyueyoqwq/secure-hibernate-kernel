@@ -20,6 +20,7 @@ done
 mkdir -p "$mock_repo/scripts" "$mock_repo/certs" "$test_root/etc" "$mock_bin"
 cp "$repo_root/scripts/update-local.py" \
 	"$repo_root/scripts/release-manifest.py" \
+	"$repo_root/scripts/patch-tags.sh" \
 	"$repo_root/scripts/resolve-version.sh" "$mock_repo/scripts/"
 chmod 0755 "$mock_repo/scripts/"*
 openssl req -new -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
