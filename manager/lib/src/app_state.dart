@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backend.dart';
+import 'desktop_notifications.dart';
 import 'manager_updates.dart';
 import 'translations.dart';
 
@@ -41,6 +42,11 @@ export 'manager_updates.dart'
         ManagerUpdateInfo,
         ManagerUpdateState,
         managerCurrentVersion;
+export 'desktop_notifications.dart'
+    show
+        DesktopUpdateKind,
+        ManagerNotificationService,
+        NoopManagerNotificationService;
 
 enum ManagerPage { overview, wizard, kernels, security, settings, diagnostics }
 
@@ -56,6 +62,8 @@ const _kernelCheckRunningStatuses = {
   'verifying-packages',
   'authorizing-version',
 };
+
+Future<void> _noopWindowFocuser() async {}
 
 class ManagerNotice {
   const ManagerNotice({
@@ -76,8 +84,15 @@ class ManagerController extends ChangeNotifier {
     this.translations, {
     this.backend,
     ManagerUpdateChecker? updateChecker,
+    ManagerNotificationService? notificationService,
     Future<void> Function(String)? releaseOpener,
+    Future<void> Function()? windowFocuser,
+    ManagerPage initialPage = ManagerPage.overview,
   })  : _releaseOpener = releaseOpener ?? openManagerRelease,
+        _notificationService =
+            notificationService ?? const NoopManagerNotificationService(),
+        _windowFocuser = windowFocuser ?? _noopWindowFocuser,
+        activePage = initialPage,
         language = AppLanguage.fromLocale(
           PlatformDispatcher.instance.locale.languageCode,
           PlatformDispatcher.instance.locale.countryCode,
@@ -132,7 +147,9 @@ class ManagerController extends ChangeNotifier {
   final TranslationCatalog translations;
   final ManagerBackend? backend;
   final ManagerUpdateChecker _updateChecker;
+  final ManagerNotificationService _notificationService;
   final Future<void> Function(String) _releaseOpener;
+  final Future<void> Function() _windowFocuser;
   SharedPreferences? _preferences;
   bool _disposed = false;
   bool _languageChanged = false;
@@ -141,7 +158,7 @@ class ManagerController extends ChangeNotifier {
 
   AppLanguage language;
   ThemeMode themeMode = ThemeMode.system;
-  ManagerPage activePage = ManagerPage.overview;
+  ManagerPage activePage;
   BackendConnection backendConnection;
   bool setupComplete = false;
   bool setupProgressLoaded = false;
@@ -178,6 +195,8 @@ class ManagerController extends ChangeNotifier {
   int _noticeCounter = 0;
   Future<ProjectMokInspection>? _activeMokInspection;
   Future<void>? _activeManagerUpdateCheck;
+  String? _notifiedManagerVersion;
+  String? _notifiedKernelRelease;
   Future<ManagerActionResult>? _activeKernelCheckStart;
   Future<void>? _activeKernelCheckMonitor;
   Timer? _kernelCheckPollTimer;
@@ -415,6 +434,7 @@ class ManagerController extends ChangeNotifier {
     }
     final snapshot = await backend!.getSnapshot();
     _applySnapshot(snapshot);
+    _notifyKernelUpdateIfAvailable();
     backendConnection = BackendConnection.native;
     notifyListeners();
     return snapshot;
@@ -443,6 +463,7 @@ class ManagerController extends ChangeNotifier {
       final result = await _updateChecker.check(managerCurrentVersion);
       if (_disposed) return;
       managerUpdate = result;
+      _notifyManagerUpdateIfAvailable();
     } on Object catch (error) {
       if (_disposed) return;
       managerUpdate = ManagerUpdateInfo(
@@ -452,6 +473,91 @@ class ManagerController extends ChangeNotifier {
       );
     }
     notifyListeners();
+  }
+
+  void _notifyManagerUpdateIfAvailable() {
+    final version = managerUpdate.latestVersion;
+    if (backend == null ||
+        managerUpdate.state != ManagerUpdateState.available ||
+        version == null ||
+        version == _notifiedManagerVersion) {
+      return;
+    }
+    _notifiedManagerVersion = version;
+    unawaited(_showUpdateNotification(
+      kind: DesktopUpdateKind.manager,
+      version: version,
+      title: t.text('notifications.managerUpdateTitle'),
+      body: t.text('notifications.managerUpdateBody', {'version': version}),
+    ));
+  }
+
+  void _notifyKernelUpdateIfAvailable() {
+    final release = updater.availableKernelRelease;
+    if (backend == null ||
+        release == null ||
+        release == _notifiedKernelRelease) {
+      return;
+    }
+    _notifiedKernelRelease = release;
+    unawaited(_showUpdateNotification(
+      kind: DesktopUpdateKind.kernel,
+      version: release,
+      title: t.text('notifications.kernelUpdateTitle'),
+      body: t.text('notifications.kernelUpdateBody', {'version': release}),
+    ));
+  }
+
+  Future<void> _showUpdateNotification({
+    required DesktopUpdateKind kind,
+    required String version,
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _notificationService.showUpdate(
+        kind: kind,
+        version: version,
+        title: title,
+        body: body,
+        actionLabel: t.text('notifications.viewUpdates'),
+        onOpen: () async {
+          if (!_disposed) await openUpdatesPage();
+        },
+      );
+    } on Object catch (error) {
+      if (kind == DesktopUpdateKind.manager &&
+          _notifiedManagerVersion == version) {
+        _notifiedManagerVersion = null;
+      } else if (kind == DesktopUpdateKind.kernel &&
+          _notifiedKernelRelease == version) {
+        _notifiedKernelRelease = null;
+      }
+      if (!_disposed) {
+        logs.add('[Error] Desktop update notification failed: $error');
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> openUpdatesPage() async {
+    setPage(ManagerPage.kernels);
+    await _windowFocuser();
+    if (backend != null && !_disposed) {
+      unawaited(checkManagerUpdate());
+      unawaited(_refreshSnapshotAfterActivation());
+    }
+  }
+
+  Future<void> _refreshSnapshotAfterActivation() async {
+    try {
+      await refreshSnapshot();
+    } on Object catch (error) {
+      if (!_disposed) {
+        logs.add('[Error] Update status refresh failed: $error');
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> _runStartupNativeActions() async {

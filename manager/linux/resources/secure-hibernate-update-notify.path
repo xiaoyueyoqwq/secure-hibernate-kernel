@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch Secure Hibernate update results for the desktop session
+PartOf=graphical-session.target
+
+[Path]
+PathChanged=/var/cache/s4lockdown-update/check-state.json
+PathChanged=/var/cache/s4lockdown-update/manager-check-state.json
+Unit=secure-hibernate-update-notify.service
+
+[Install]
+WantedBy=graphical-session.target

@@ -8,11 +8,15 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  GtkWindow* window;
+  FlMethodChannel* activation_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 static const gchar* kWindowTitle = "Secure Hibernate";
+static const gchar* kActivationChannel =
+    "io.github.xiaoyueyoqwq.secure-hibernate-manager/activation";
 
 static gchar* application_asset_path(const gchar* asset_name) {
   g_autofree gchar* executable_path =
@@ -35,8 +39,13 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  if (self->window != nullptr) {
+    gtk_window_present(self->window);
+    return;
+  }
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  self->window = window;
   g_autofree gchar* icon_path = application_asset_path("app-icon.png");
   GError* icon_error = nullptr;
   if (!gtk_window_set_icon_from_file(window, icon_path, &icon_error)) {
@@ -70,28 +79,46 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->activation_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      kActivationChannel, FL_METHOD_CODEC(codec));
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
-// Implements GApplication::local_command_line.
-static gboolean my_application_local_command_line(GApplication* application,
-                                                  gchar*** arguments,
-                                                  int* exit_status) {
-  MyApplication* self = MY_APPLICATION(application);
-  // Strip out the first argument as it is the binary name.
-  self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
-
-  g_autoptr(GError) error = nullptr;
-  if (!g_application_register(application, nullptr, &error)) {
-    g_warning("Failed to register: %s", error->message);
-    *exit_status = 1;
-    return TRUE;
+static gboolean command_opens_updates(gchar** arguments, int argument_count) {
+  for (int index = 1; index < argument_count; index++) {
+    if (g_strcmp0(arguments[index], "--updates") == 0) {
+      return TRUE;
+    }
   }
+  return FALSE;
+}
 
-  g_application_activate(application);
-  *exit_status = 0;
+// Implements GApplication::command_line.
+static int my_application_command_line(
+    GApplication* application,
+    GApplicationCommandLine* command_line) {
+  MyApplication* self = MY_APPLICATION(application);
+  int argument_count = 0;
+  g_auto(GStrv) arguments =
+      g_application_command_line_get_arguments(command_line, &argument_count);
+  const gboolean open_updates =
+      command_opens_updates(arguments, argument_count);
 
-  return TRUE;
+  if (self->window == nullptr) {
+    g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+    self->dart_entrypoint_arguments = g_strdupv(arguments + 1);
+    g_application_activate(application);
+  } else {
+    if (open_updates && self->activation_channel != nullptr) {
+      fl_method_channel_invoke_method(self->activation_channel, "openUpdates",
+                                      nullptr, nullptr, nullptr, nullptr);
+    }
+    gtk_window_present(self->window);
+  }
+  return 0;
 }
 
 // Implements GApplication::startup.
@@ -115,14 +142,14 @@ static void my_application_shutdown(GApplication* application) {
 // Implements GObject::dispose.
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
+  g_clear_object(&self->activation_channel);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
 static void my_application_class_init(MyApplicationClass* klass) {
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
-  G_APPLICATION_CLASS(klass)->local_command_line =
-      my_application_local_command_line;
+  G_APPLICATION_CLASS(klass)->command_line = my_application_command_line;
   G_APPLICATION_CLASS(klass)->startup = my_application_startup;
   G_APPLICATION_CLASS(klass)->shutdown = my_application_shutdown;
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
@@ -139,5 +166,6 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_HANDLES_COMMAND_LINE,
+                                     nullptr));
 }

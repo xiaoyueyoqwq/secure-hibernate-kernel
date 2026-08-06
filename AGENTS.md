@@ -411,3 +411,13 @@
   while naming a newer patch-variant kernel. Compare the kernel releases before
   treating a same-source verified state as stale, and include an authoritative
   check-state kernel in the available-kernel list.
+- An empty available-kernel list does not mean the system is current while an
+  updater check is active. Render the kernel Release row from check-service
+  liveness until the terminal snapshot arrives; a phase alone may be stale.
+- Scheduled updater checks must inspect both the kernel channel and the Manager
+  Release channel. Keep Manager failure state separate so a software-channel
+  outage does not prevent authenticated kernel checking.
+- Desktop update notifications must run in the logged-in user's systemd and
+  D-Bus session, deduplicate each Manager version and kernel release in
+  mode-0600 user state, and activate the fixed single-instance `--updates`
+  route so an existing window is presented on the updates page.

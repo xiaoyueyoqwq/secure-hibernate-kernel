@@ -48,6 +48,8 @@ jobs:
             config/systemd/s4lockdown-grub-reboot \
             config/grub/11_s4lockdown_resume
           tests/grub-resume.sh
+          python3 tests/desktop-notifications.py
+          python3 tests/manager-update-check.py
           python3 tests/manager-release.py
           tests/manager-dev.sh
           tests/release-decision.sh

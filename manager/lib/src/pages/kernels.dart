@@ -87,6 +87,7 @@ class _KernelsPageState extends State<KernelsPage> {
     final unavailable =
         manager.backendConnection == BackendConnection.loading ||
             manager.backendConnection == BackendConnection.error;
+    final kernelReleaseChecking = manager.updater.checkServiceActive;
     final managerUpdate = manager.managerUpdate;
     final managerUpdateValue = switch (managerUpdate.state) {
       ManagerUpdateState.current => t.text('kernels.upToDate'),
@@ -236,10 +237,20 @@ class _KernelsPageState extends State<KernelsPage> {
           const SizedBox(height: 12),
           if (available.isEmpty)
             StatusRow(
+              key: const ValueKey('kernel-release-status'),
               label: t.text('kernels.releaseStatus'),
-              value: Text(t.text('kernels.upToDate')),
-              status: StatusKind.ok,
-              description: t.text('kernels.noNewRelease'),
+              value: Text(t.text(
+                kernelReleaseChecking
+                    ? 'common.checkingStatus'
+                    : 'kernels.upToDate',
+              )),
+              status:
+                  kernelReleaseChecking ? StatusKind.loading : StatusKind.ok,
+              description: t.text(
+                kernelReleaseChecking
+                    ? 'kernels.releaseCheckingDescription'
+                    : 'kernels.noNewRelease',
+              ),
             )
           else
             for (var index = 0; index < available.length; index++) ...[

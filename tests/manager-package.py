@@ -138,6 +138,7 @@ class ManagerPackageTests(unittest.TestCase):
             "cryptsetup-bin",
             "dracut-core",
             "libgtk-3-0t64 | libgtk-3-0",
+            "libnotify-bin",
             "libtss2-tcti-device0t64 | libtss2-tcti-device0",
             "mokutil",
             "pkexec",
@@ -148,6 +149,33 @@ class ManagerPackageTests(unittest.TestCase):
         ):
             with self.subTest(dependency=dependency):
                 self.assertIn(dependency, self.build_script)
+
+    def test_desktop_update_notification_monitor_is_packaged(self) -> None:
+        helper = MANAGER_ROOT / "scripts/desktop-update-notify.py"
+        self.assertTrue(helper.is_file())
+        self.assertIn("desktop-update-notify.py", self.build_script)
+        for unit in (
+            "secure-hibernate-update-notify.path",
+            "secure-hibernate-update-notify.service",
+        ):
+            with self.subTest(unit=unit):
+                self.assertTrue(
+                    (MANAGER_ROOT / "linux/resources" / unit).is_file()
+                )
+                self.assertIn(unit, self.build_script)
+        self.assertIn(
+            '"$package_root/usr/lib/systemd/user/graphical-session.target.wants"',
+            self.build_script,
+        )
+
+    def test_linux_runner_supports_single_instance_update_activation(self) -> None:
+        runner = (MANAGER_ROOT / "linux/runner/my_application.cc").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("G_APPLICATION_HANDLES_COMMAND_LINE", runner)
+        self.assertNotIn("G_APPLICATION_NON_UNIQUE", runner)
+        self.assertIn('"openUpdates"', runner)
+        self.assertIn('g_strcmp0(arguments[index], "--updates")', runner)
 
     def test_build_is_offline_after_dependency_resolution(self) -> None:
         self.assertIn("pubspec.lock", self.build_script)

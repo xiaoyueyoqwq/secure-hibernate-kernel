@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'src/app_state.dart';
+import 'src/desktop_notifications.dart';
 import 'src/native_backend.dart';
 import 'src/pages/diagnostics.dart';
 import 'src/pages/installation_wizard.dart';
@@ -17,7 +19,11 @@ import 'src/translations.dart';
 import 'src/widgets/app_select.dart';
 import 'src/widgets/core.dart';
 
-Future<void> main() async {
+const _activationChannel = MethodChannel(
+  'io.github.xiaoyueyoqwq.secure-hibernate-manager/activation',
+);
+
+Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
 
@@ -37,19 +43,51 @@ Future<void> main() async {
   }));
 
   final translations = await TranslationCatalog.load();
+  const notifications = LinuxManagerNotificationService();
+  unawaited(_initializeNotifications(notifications));
   runApp(
     SecureHibernateManagerApp(
       translations: translations,
       backend: NativeManagerBackend(),
+      notificationService: notifications,
+      initialPage: arguments.contains('--updates')
+          ? ManagerPage.kernels
+          : ManagerPage.overview,
+      windowFocuser: _focusManagerWindow,
     ),
   );
 }
 
+Future<void> _initializeNotifications(
+  ManagerNotificationService notifications,
+) async {
+  try {
+    await notifications.initialize();
+  } on Object catch (error) {
+    debugPrint('Desktop notification monitor unavailable: $error');
+  }
+}
+
+Future<void> _focusManagerWindow() async {
+  await windowManager.show();
+  await windowManager.focus();
+}
+
 class SecureHibernateManagerApp extends StatefulWidget {
-  const SecureHibernateManagerApp({this.translations, this.backend, super.key});
+  const SecureHibernateManagerApp({
+    this.translations,
+    this.backend,
+    this.notificationService,
+    this.initialPage = ManagerPage.overview,
+    this.windowFocuser,
+    super.key,
+  });
 
   final TranslationCatalog? translations;
   final ManagerBackend? backend;
+  final ManagerNotificationService? notificationService;
+  final ManagerPage initialPage;
+  final Future<void> Function()? windowFocuser;
 
   @override
   State<SecureHibernateManagerApp> createState() =>
@@ -76,6 +114,9 @@ class _SecureHibernateManagerAppState extends State<SecureHibernateManagerApp> {
         return _LoadedManager(
           catalog: snapshot.data!,
           backend: widget.backend,
+          notificationService: widget.notificationService,
+          initialPage: widget.initialPage,
+          windowFocuser: widget.windowFocuser,
         );
       },
     );
@@ -83,10 +124,19 @@ class _SecureHibernateManagerAppState extends State<SecureHibernateManagerApp> {
 }
 
 class _LoadedManager extends StatefulWidget {
-  const _LoadedManager({required this.catalog, this.backend});
+  const _LoadedManager({
+    required this.catalog,
+    this.backend,
+    this.notificationService,
+    this.initialPage = ManagerPage.overview,
+    this.windowFocuser,
+  });
 
   final TranslationCatalog catalog;
   final ManagerBackend? backend;
+  final ManagerNotificationService? notificationService;
+  final ManagerPage initialPage;
+  final Future<void> Function()? windowFocuser;
 
   @override
   State<_LoadedManager> createState() => _LoadedManagerState();
@@ -96,10 +146,24 @@ class _LoadedManagerState extends State<_LoadedManager> {
   late final ManagerController manager = ManagerController(
     widget.catalog,
     backend: widget.backend,
+    notificationService: widget.notificationService,
+    initialPage: widget.initialPage,
+    windowFocuser: widget.windowFocuser,
   );
 
   @override
+  void initState() {
+    super.initState();
+    _activationChannel.setMethodCallHandler((call) async {
+      if (call.method == 'openUpdates') {
+        await manager.openUpdatesPage();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _activationChannel.setMethodCallHandler(null);
     manager.dispose();
     super.dispose();
   }

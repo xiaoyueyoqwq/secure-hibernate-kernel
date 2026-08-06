@@ -36,6 +36,10 @@ SOURCE_VERSION = re.compile(
 )
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 PROJECT_SUFFIXES = ("-s4lockdown", "-hibernate")
+MANAGER_PACKAGE = "secure-hibernate-manager"
+MANAGER_RELEASE_PATTERN = re.compile(
+    r"^manager-v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+(\d+))?$"
+)
 
 
 def is_project_kernel(release: str) -> bool:
@@ -477,6 +481,149 @@ def download_json(url: str) -> tuple[int, bytes]:
         fail(f"GitHub Release API request failed: {error.reason}")
 
 
+def parse_manager_version(tag: str) -> tuple[int, int, int, int, str, int] | None:
+    match = MANAGER_RELEASE_PATTERN.fullmatch(tag)
+    if match is None:
+        return None
+    prerelease = match.group(4)
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)),
+        1 if prerelease is None else 0,
+        prerelease or "",
+        int(match.group(5) or "0"),
+    )
+
+
+def trusted_manager_release_url(value: object, tag: str) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = urllib.parse.urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    expected_path = f"/{PROJECT_REPOSITORY}/releases/tag/{tag}"
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "github.com"
+        or port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or urllib.parse.unquote(parsed.path) != expected_path
+    ):
+        return None
+    return value
+
+
+def installed_manager_version(testing: bool) -> str:
+    if testing:
+        version = os.environ.get("S4LOCKDOWN_TEST_MANAGER_VERSION")
+        if version is None:
+            fail("Test Manager version was not provided")
+    else:
+        result = run(
+            [
+                "dpkg-query",
+                "-W",
+                "-f=${Version}\n",
+                MANAGER_PACKAGE,
+            ],
+            capture=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            fail("Secure Hibernate Manager is not installed")
+        version = result.stdout.decode("utf-8", "replace").strip()
+    if parse_manager_version(f"manager-v{version}") is None:
+        fail(f"Installed Manager version is invalid: {version}")
+    return version
+
+
+def check_manager_release(cache_dir: Path, testing: bool) -> None:
+    if testing and "S4LOCKDOWN_TEST_MANAGER_VERSION" not in os.environ:
+        return
+    state_path = cache_dir / "manager-check-state.json"
+    write_json_atomic(
+        state_path,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "status": "checking",
+            "checked_at": now(),
+        },
+    )
+    try:
+        current = installed_manager_version(testing)
+        if testing:
+            fixture = os.environ.get("S4LOCKDOWN_TEST_MANAGER_RELEASES")
+            if fixture is None:
+                fail("Test Manager Release fixture was not provided")
+            content = Path(fixture).read_bytes()
+            status = 200
+        else:
+            status, content = download_json(
+                f"https://api.github.com/repos/{PROJECT_REPOSITORY}/"
+                "releases?per_page=30"
+            )
+        if status != 200:
+            fail(f"Manager Release API returned HTTP {status}")
+        try:
+            document = json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            fail(f"Manager Release API returned invalid JSON: {error}")
+        if not isinstance(document, list):
+            fail("Manager Release API response is not a list")
+
+        releases: list[tuple[tuple[int, int, int, int, str, int], str, str]] = []
+        for entry in document:
+            if (
+                not isinstance(entry, dict)
+                or entry.get("draft") is not False
+                or entry.get("prerelease") is not False
+            ):
+                continue
+            tag = entry.get("tag_name")
+            if not isinstance(tag, str):
+                continue
+            parsed_version = parse_manager_version(tag)
+            release_url = trusted_manager_release_url(entry.get("html_url"), tag)
+            if parsed_version is not None and release_url is not None:
+                releases.append((parsed_version, tag, release_url))
+        if not releases:
+            fail("No published Manager Release was found")
+
+        _key, latest_tag, release_url = max(releases, key=lambda release: release[0])
+        current_key = parse_manager_version(f"manager-v{current}")
+        if current_key is None:
+            fail("Installed Manager version is invalid")
+        latest_version = latest_tag.removeprefix("manager-v")
+        write_json_atomic(
+            state_path,
+            {
+                "schema_version": SCHEMA_VERSION,
+                "status": "available" if _key > current_key else "current",
+                "checked_at": now(),
+                "current_version": current,
+                "latest_version": latest_version,
+                "release_url": release_url,
+            },
+        )
+    except (OSError, UpdateError) as error:
+        write_json_atomic(
+            state_path,
+            {
+                "schema_version": SCHEMA_VERSION,
+                "status": "check-failed",
+                "checked_at": now(),
+                "error": str(error)[:240],
+            },
+        )
+        print(f"s4lockdown-update: Manager Release check failed: {error}", file=sys.stderr)
+
+
 def download_asset(
     url: str,
     destination: Path,
@@ -896,6 +1043,16 @@ def check_command(arguments: argparse.Namespace) -> int:
                     {"schema_version": SCHEMA_VERSION, "status": "manual", "checked_at": now()},
                 )
                 return 0
+
+            write_json_atomic(
+                check_state,
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "status": "indexing",
+                    "checked_at": now(),
+                },
+            )
+            check_manager_release(cache_dir, testing)
 
             resolved = resolve_version(resolver, arguments.source_version)
             candidate = resolved["source_package_version"]

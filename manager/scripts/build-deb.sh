@@ -45,6 +45,9 @@ printf 'Building Flutter Linux release bundle...\n'
 bundle="$flutter_root/build/linux/x64/release/bundle"
 for required in "$bundle/secure-hibernate-manager" "$bundle/data" "$bundle/lib" \
 	"$flutter_root/linux/resources/$application_id.desktop" \
+	"$flutter_root/linux/resources/secure-hibernate-update-notify.path" \
+	"$flutter_root/linux/resources/secure-hibernate-update-notify.service" \
+	"$flutter_root/scripts/desktop-update-notify.py" \
 	"$flutter_root/linux/resources/app-icon.png"; do
 	[[ -e $required ]] || {
 		printf 'Flutter build output is missing: %s\n' "$required" >&2
@@ -61,6 +64,7 @@ install -d -m 0755 \
 	"$package_root$app_root/resources/backend/config" \
 	"$package_root$app_root/resources/licenses" \
 	"$package_root/usr/bin" \
+	"$package_root/usr/lib/systemd/user/graphical-session.target.wants" \
 	"$package_root/usr/share/applications" \
 	"$package_root/usr/share/icons/hicolor/256x256/apps"
 
@@ -76,6 +80,15 @@ install -m 0644 "$flutter_root/linux/resources/$application_id.desktop" \
 	"$package_root/usr/share/applications/$application_id.desktop"
 install -m 0644 "$flutter_root/linux/resources/app-icon.png" \
 	"$package_root/usr/share/icons/hicolor/256x256/apps/$application_id.png"
+install -m 0755 "$flutter_root/scripts/desktop-update-notify.py" \
+	"$package_root$app_root/resources/desktop-update-notify.py"
+for unit in secure-hibernate-update-notify.path \
+	secure-hibernate-update-notify.service; do
+	install -m 0644 "$flutter_root/linux/resources/$unit" \
+		"$package_root/usr/lib/systemd/user/$unit"
+	ln -s "../$unit" \
+		"$package_root/usr/lib/systemd/user/graphical-session.target.wants/$unit"
+done
 
 # The controller installer derives its repository root from this backend tree.
 # Copy only the reviewed public resources required by that installer.
@@ -137,7 +150,7 @@ Section: admin
 Priority: optional
 Architecture: $architecture
 Maintainer: Secure Hibernate Kernel Project <xiaoyueyoqwq@users.noreply.github.com>
-Depends: apt, cryptsetup-bin, dpkg, dracut-core, grub2-common, kmod, libgtk-3-0t64 | libgtk-3-0, libtss2-tcti-device0t64 | libtss2-tcti-device0, mokutil, openssl, passwd, perl, pkexec, polkitd, psmisc, python3, sbsigntool, systemd, systemd-cryptsetup, tpm-udev, tpm2-tools, util-linux, xz-utils, zstd
+Depends: apt, cryptsetup-bin, dpkg, dracut-core, grub2-common, kmod, libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libtss2-tcti-device0t64 | libtss2-tcti-device0, mokutil, openssl, passwd, perl, pkexec, polkitd, psmisc, python3, sbsigntool, systemd, systemd-cryptsetup, tpm-udev, tpm2-tools, util-linux, xz-utils, zstd
 Description: Secure Hibernate Manager
  Flutter desktop manager for the signed Secure Hibernate project kernel.
  The package includes the reviewed local update controller and its public

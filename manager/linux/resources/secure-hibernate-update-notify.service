@@ -1,0 +1,11 @@
+[Unit]
+Description=Notify the desktop session about Secure Hibernate updates
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/secure-hibernate-manager/resources/desktop-update-notify.py
+
+[Install]
+WantedBy=graphical-session.target

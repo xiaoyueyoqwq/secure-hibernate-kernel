@@ -25,6 +25,13 @@
     "managerUpdateOpenFailedTitle": "Could not open update",
     "managerUpdateOpenFailedDescription": "Open the latest Manager Release from the project repository and install its Debian package manually."
   },
+  "notifications": {
+    "managerUpdateTitle": "Manager update available",
+    "managerUpdateBody": "Secure Hibernate Manager {version} is available.",
+    "kernelUpdateTitle": "Kernel update available",
+    "kernelUpdateBody": "Project kernel {version} has been verified and is ready.",
+    "viewUpdates": "View updates"
+  },
   "common": {
     "open": "Open",
     "export": "Export",
@@ -257,6 +264,7 @@
     "verifiedRelease": "Verified Release",
     "publishedRelease": "Published {date} with a verified project signature.",
     "releaseStatus": "Release Status",
+    "releaseCheckingDescription": "Downloading and verifying the latest project kernel Release.",
     "upToDate": "Up to Date",
     "noNewRelease": "No newer verified Ubuntu ABI release is available."
   },

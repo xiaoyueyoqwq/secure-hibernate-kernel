@@ -33,6 +33,33 @@ class _AvailableManagerUpdateChecker implements ManagerUpdateChecker {
       );
 }
 
+class _RecordedUpdateNotification {
+  const _RecordedUpdateNotification(this.kind, this.version, this.onOpen);
+
+  final DesktopUpdateKind kind;
+  final String version;
+  final FutureOr<void> Function() onOpen;
+}
+
+class _RecordingNotificationService implements ManagerNotificationService {
+  final List<_RecordedUpdateNotification> notifications = [];
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> showUpdate({
+    required DesktopUpdateKind kind,
+    required String version,
+    required String title,
+    required String body,
+    required String actionLabel,
+    required FutureOr<void> Function() onOpen,
+  }) async {
+    notifications.add(_RecordedUpdateNotification(kind, version, onOpen));
+  }
+}
+
 UpdateControllerStatus testUpdaterStatus({
   String? status,
   String? checkedAt,
@@ -43,6 +70,7 @@ UpdateControllerStatus testUpdaterStatus({
   String? checkFailedPhase,
   String? lastCheckError,
   String? installedKernelRelease,
+  String? availableKernelRelease,
   bool rebootRequired = false,
 }) =>
     UpdateControllerStatus(
@@ -51,7 +79,7 @@ UpdateControllerStatus testUpdaterStatus({
       lastCheckStatus: status,
       lastCheckedAt: checkedAt,
       availableSourceVersion: null,
-      availableKernelRelease: null,
+      availableKernelRelease: availableKernelRelease,
       installedSourceVersion: null,
       installedKernelRelease: installedKernelRelease,
       rebootRequired: rebootRequired,
@@ -802,6 +830,65 @@ void main() {
     );
   });
 
+  test('Manager update notification navigates and is deduplicated', () async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final notifications = _RecordingNotificationService();
+    var focusRequests = 0;
+    final manager = ManagerController(
+      translations,
+      backend: const _CancelledManagerBackend(),
+      updateChecker: const _AvailableManagerUpdateChecker(),
+      notificationService: notifications,
+      windowFocuser: () async => focusRequests += 1,
+    );
+    addTearDown(manager.dispose);
+
+    await manager.checkManagerUpdate();
+    await Future<void>.delayed(Duration.zero);
+    await manager.checkManagerUpdate();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.notifications, hasLength(1));
+    final notification = notifications.notifications.single;
+    expect(notification.kind, DesktopUpdateKind.manager);
+    expect(notification.version, '1.0.0+999');
+    await notification.onOpen();
+    expect(manager.activePage, ManagerPage.kernels);
+    expect(focusRequests, 1);
+  });
+
+  test('verified kernel notification navigates and is deduplicated', () async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final notifications = _RecordingNotificationService();
+    var focusRequests = 0;
+    final updater = testUpdaterStatus(
+      status: 'verified',
+      availableKernelRelease: '7.0.12-29-vmstat-hibernate',
+    );
+    final manager = ManagerController(
+      translations,
+      backend: _FixedUpdaterBackend(updater),
+      notificationService: notifications,
+      windowFocuser: () async => focusRequests += 1,
+    );
+    addTearDown(manager.dispose);
+
+    await manager.refreshSnapshot();
+    await Future<void>.delayed(Duration.zero);
+    await manager.refreshSnapshot();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.notifications, hasLength(1));
+    final notification = notifications.notifications.single;
+    expect(notification.kind, DesktopUpdateKind.kernel);
+    expect(notification.version, '7.0.12-29-vmstat-hibernate');
+    await notification.onOpen();
+    expect(manager.activePage, ManagerPage.kernels);
+    expect(focusRequests, 1);
+  });
+
   testWidgets('kernel removal expands into an explicit confirmation',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
@@ -906,6 +993,49 @@ void main() {
     expect(
       find.descendant(of: fallback, matching: find.byIcon(LucideIcons.trash2)),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('kernel page does not report current during an active check',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final manager = ManagerController(translations);
+    addTearDown(manager.dispose);
+    manager.kernels = const [
+      KernelInfo(
+        id: 'active',
+        version: '7.0.12-29-hibernate',
+        project: true,
+        status: KernelStatus.active,
+      ),
+    ];
+    manager.updater = testUpdaterStatus(
+      status: 'verifying-packages',
+      checkServiceActive: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: ManagerScope(
+          controller: manager,
+          child: const SingleChildScrollView(child: KernelsPage()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final releaseStatus = find.byKey(
+      const ValueKey('kernel-release-status'),
+    );
+    expect(
+      find.descendant(of: releaseStatus, matching: find.text('Checking')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: releaseStatus, matching: find.text('Up to Date')),
+      findsNothing,
     );
   });
 

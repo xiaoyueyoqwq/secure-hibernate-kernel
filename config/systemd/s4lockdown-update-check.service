@@ -10,7 +10,7 @@ Type=oneshot
 User=s4lockdown-update
 Group=s4lockdown-update
 CacheDirectory=s4lockdown-update
-# Only check-state.json is mode 0644; staged package directories remain mode 0700.
+# Only JSON status reports are mode 0644; staged package directories remain mode 0700.
 CacheDirectoryMode=0755
 ExecStart=/usr/local/lib/s4lockdown-update/scripts/update-local.sh check
 UMask=0077

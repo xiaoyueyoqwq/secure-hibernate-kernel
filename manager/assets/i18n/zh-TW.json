@@ -25,6 +25,13 @@
     "managerUpdateOpenFailedTitle": "無法開啟更新頁面",
     "managerUpdateOpenFailedDescription": "請從專案儲存庫開啟最新的管理器 Release，並手動安裝其中的 Debian 軟體包。"
   },
+  "notifications": {
+    "managerUpdateTitle": "有新的管理器版本",
+    "managerUpdateBody": "Secure Hibernate 管理器 {version} 已發佈。",
+    "kernelUpdateTitle": "有新的核心版本",
+    "kernelUpdateBody": "專案核心 {version} 已通過驗證，可以更新。",
+    "viewUpdates": "查看更新"
+  },
   "common": {
     "open": "開啟",
     "export": "匯出",
@@ -257,6 +264,7 @@
     "verifiedRelease": "已驗證發行版本",
     "publishedRelease": "發佈於 {date}，專案簽署已驗證。",
     "releaseStatus": "發行狀態",
+    "releaseCheckingDescription": "正在下載並驗證最新的專案核心 Release。",
     "upToDate": "已是最新",
     "noNewRelease": "沒有更新的已驗證 Ubuntu ABI 發行版本。"
   },
