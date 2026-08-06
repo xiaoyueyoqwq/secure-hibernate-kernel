@@ -23,6 +23,9 @@ cp "$repo_root/scripts/update-local.py" \
 	"$repo_root/scripts/patch-tags.sh" \
 	"$repo_root/scripts/resolve-version.sh" "$mock_repo/scripts/"
 chmod 0755 "$mock_repo/scripts/"*
+# The installed controller carries an explicit empty patch set until the
+# variant scenario below adds a source-style patches directory.
+printf '\n' > "$mock_repo/patch-tags.txt"
 openssl req -new -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
 	-subj '/CN=Local Update Test/' \
 	-addext 'basicConstraints=critical,CA:TRUE' \
