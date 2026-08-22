@@ -1,0 +1,25 @@
+From: Secure Hibernate project <noreply@example.invalid>
+Subject: [PATCH] elan100k: force DELL0A86 touchpad I2C bus to 100 kHz
+
+The Dell Inspiron 13 5310 ELAN touchpad (DELL0A86, 04F3:3185) randomly
+enters a 5-45 s sticky/damped state on its DesignWare I2C bus. Its DSDT
+selects the bus speed through TPDS and this unit runs at 400 kHz, which
+matches the known excessive-smoothing failure family already covered by
+i2c_acpi_force_100khz_device_ids for DLL0945 and ELAN06FA. Add DELL0A86
+to that table so i2c-acpi forces the shared bus to standard-mode speed.
+
+Experiment-only patch for A/B validation; not intended for release.
+---
+diff --git a/drivers/i2c/i2c-core-acpi.c b/drivers/i2c/i2c-core-acpi.c
+index 2cbd31f..d3fe58e 100644
+--- a/drivers/i2c/i2c-core-acpi.c
++++ b/drivers/i2c/i2c-core-acpi.c
+@@ -372,6 +372,7 @@ static const struct acpi_device_id i2c_acpi_force_100khz_device_ids[] = {
+ 	 */
++	{ "DELL0A86", 0 },
+ 	{ "DLL0945", 0 },
+ 	{ "ELAN06FA", 0 },
+-	{}
++	{}
+ };
+ 
