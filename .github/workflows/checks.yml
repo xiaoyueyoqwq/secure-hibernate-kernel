@@ -23,7 +23,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             ca-certificates curl dpkg-dev findutils gawk git grep jq kmod \
-            linux-headers-generic-hwe-26.04 openssl perl psmisc python3 sed \
+            linux-headers-generic-hwe-26.04 openssl perl psmisc python3 python3-gi sed \
             shellcheck systemd util-linux xz-utils zstd
 
       - name: Check out repository
