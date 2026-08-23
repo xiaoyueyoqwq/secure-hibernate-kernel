@@ -53,7 +53,8 @@ Supported values are:
   package manager defers the update without treating it as a package failure.
 
 `PROJECT_KERNEL_HISTORY` controls how many older project kernels remain after a
-successful update. Valid values are `1`, `2`, and `3`; the default is `2`.
+successful update or a retention-setting change. Valid values are `1`, `2`, and
+`3`; the default is `2`.
 Cleanup never removes the newly installed kernel, the running kernel, an
 official Ubuntu kernel, or the Ubuntu HWE meta-package. The running kernel can
 temporarily make the retained count exceed the selected history until a later

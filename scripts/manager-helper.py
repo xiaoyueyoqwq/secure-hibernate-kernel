@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+from functools import cmp_to_key
 import json
 import os
 import re
@@ -529,13 +530,17 @@ def action_set_kernel_retention(history: int) -> dict[str, Any]:
     policy, _ = read_update_configuration()
     try:
         write_update_configuration(policy, history)
+        removed_releases = prune_project_kernels(history)
     except Exception:
         if previous is None:
             CONFIG_PATH.unlink(missing_ok=True)
         else:
             write_atomic(CONFIG_PATH, previous, 0o644)
         raise
-    return {"projectKernelHistory": history}
+    return {
+        "projectKernelHistory": history,
+        "removedReleases": removed_releases,
+    }
 
 
 def action_prepare_mok() -> dict[str, Any]:
@@ -1177,6 +1182,75 @@ def configured_grub_top_level_release() -> str | None:
             "Project GRUB configuration has an invalid top-level kernel"
         )
     return matches[0]
+
+
+def compare_kernel_releases(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if run([
+        EXECUTABLES["dpkg"], "--compare-versions", left, "gt", right
+    ], check=False).returncode == 0:
+        return -1
+    if run([
+        EXECUTABLES["dpkg"], "--compare-versions", left, "lt", right
+    ], check=False).returncode == 0:
+        return 1
+    raise HelperError(f"Could not compare project kernel releases: {left} and {right}")
+
+
+def prune_project_kernels(history: int) -> list[str]:
+    """Apply retention immediately while preserving every boot safety target."""
+    releases = installed_kernel_packages()
+    image_releases = {
+        release
+        for release, packages in releases.items()
+        if PROJECT_RELEASE.fullmatch(release)
+        and f"linux-image-{release}" in packages
+    }
+    if not image_releases:
+        return []
+
+    protected = {os.uname().release, configured_grub_top_level_release()}
+    state_release = read_json(ROOT_STATE_PATH).get("installed_kernel_release")
+    if isinstance(state_release, str):
+        protected.add(state_release)
+    protected.intersection_update(image_releases)
+
+    historical = sorted(
+        image_releases - protected,
+        key=cmp_to_key(compare_kernel_releases),
+    )
+    keep = set(historical[:history])
+    remove_releases = [release for release in historical if release not in keep]
+    if not remove_releases:
+        return []
+
+    official_images = [
+        release
+        for release, packages in releases.items()
+        if not PROJECT_RELEASE.fullmatch(release)
+        and f"linux-image-{release}" in packages
+    ]
+    if not official_images:
+        raise HelperError("No official Ubuntu fallback kernel is installed")
+
+    packages = [
+        package
+        for release in remove_releases
+        for package in releases[release]
+    ]
+    run([EXECUTABLES["dpkg"], "--remove", *sorted(packages)], timeout=30 * 60)
+    run([EXECUTABLES["update_grub"]], timeout=10 * 60)
+    remaining = installed_kernel_packages()
+    if any(release in remaining for release in remove_releases):
+        raise HelperError("Kernel packages remain after retention cleanup")
+    if not any(
+        not PROJECT_RELEASE.fullmatch(release)
+        and f"linux-image-{release}" in packages
+        for release, packages in remaining.items()
+    ):
+        raise HelperError("Official Ubuntu fallback disappeared after retention cleanup")
+    return remove_releases
 
 
 def action_remove_kernel(release: str) -> dict[str, Any]:

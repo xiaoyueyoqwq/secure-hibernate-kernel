@@ -369,10 +369,17 @@ class ManagerHelperTests(unittest.TestCase):
             )
             with patch.object(helper, "CONFIG_PATH", config), patch.object(
                 helper, "require_trusted_file"
+            ), patch.object(
+                helper, "prune_project_kernels", return_value=[
+                    "7.0.12-29-vmstat-hibernate"
+                ]
             ):
                 result = helper.action_set_kernel_retention(3)
 
-            self.assertEqual(result, {"projectKernelHistory": 3})
+            self.assertEqual(result, {
+                "projectKernelHistory": 3,
+                "removedReleases": ["7.0.12-29-vmstat-hibernate"],
+            })
             self.assertEqual(
                 config.read_text(encoding="ascii"),
                 "POLICY=automatic-install\nPROJECT_KERNEL_HISTORY=3\n",
@@ -381,6 +388,60 @@ class ManagerHelperTests(unittest.TestCase):
     def test_kernel_retention_rejects_values_outside_supported_range(self) -> None:
         with self.assertRaisesRegex(helper.HelperError, "must be 1, 2, or 3"):
             helper.action_set_kernel_retention(4)
+
+    def test_kernel_retention_prunes_existing_superseded_packages(self) -> None:
+        releases = {
+            "7.0.12-30-vmstat-hibernate": [
+                "linux-image-7.0.12-30-vmstat-hibernate",
+                "linux-headers-7.0.12-30-vmstat-hibernate",
+            ],
+            "7.0.12-30-vmstat-elan100k-hibernate": [
+                "linux-image-7.0.12-30-vmstat-elan100k-hibernate",
+                "linux-headers-7.0.12-30-vmstat-elan100k-hibernate",
+            ],
+            "7.0.12-29-vmstat-hibernate": [
+                "linux-image-7.0.12-29-vmstat-hibernate",
+                "linux-headers-7.0.12-29-vmstat-hibernate",
+            ],
+            "7.0.0-30-generic": ["linux-image-7.0.0-30-generic"],
+        }
+        commands = []
+        remaining = {
+            release: packages
+            for release, packages in releases.items()
+            if release != "7.0.12-29-vmstat-hibernate"
+        }
+        def compare(left: str, right: str) -> int:
+            return -1 if left > right else 1 if left < right else 0
+
+        with patch.object(helper, "installed_kernel_packages", side_effect=[
+            releases, remaining, remaining
+        ]), \
+                patch.object(helper, "compare_kernel_releases", side_effect=compare), \
+                patch.object(helper.os, "uname", return_value=SimpleNamespace(
+                    release="7.0.12-30-vmstat-hibernate"
+                )), patch.object(
+                    helper, "configured_grub_top_level_release",
+                    return_value="7.0.12-30-vmstat-hibernate",
+                ), patch.object(helper, "read_json", return_value={}), patch.object(
+                    helper, "run",
+                    side_effect=lambda command, **_kwargs: (
+                        commands.append(command) or completed()
+                    ),
+                ):
+            removed = helper.prune_project_kernels(1)
+
+        self.assertEqual(removed, ["7.0.12-29-vmstat-hibernate"])
+        remove_command = next(
+            command for command in commands if command[1] == "--remove"
+        )
+        self.assertEqual(
+            remove_command[0:2], [helper.EXECUTABLES["dpkg"], "--remove"]
+        )
+        self.assertIn(
+            "linux-image-7.0.12-29-vmstat-hibernate", remove_command
+        )
+        self.assertEqual(commands[-1], [helper.EXECUTABLES["update_grub"]])
 
     def test_configuration_rejects_non_ascii_text_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
