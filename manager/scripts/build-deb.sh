@@ -94,6 +94,7 @@ done
 # Copy only the reviewed public resources required by that installer.
 scripts=(
 	extract-module-signature.pl
+	disable-legacy-grub-config.sh
 	install-signed-packages.sh
 	install-system-config.sh
 	install-update-controller.sh

@@ -123,7 +123,7 @@ chmod 0644 "$patch_tags_temp"
 mv -fT -- "$patch_tags_temp" "$install_root/patch-tags.txt"
 patch_tags_temp=
 for script in extract-module-signature.pl install-signed-packages.sh \
-	install-system-config.sh manager-helper.py patch-tags.sh \
+	disable-legacy-grub-config.sh install-system-config.sh manager-helper.py patch-tags.sh \
 	release-manifest.py resolve-version.sh set-default-kernel.sh \
 	update-local.py update-local.sh verify-module-signatures.sh; do
 	install -o root -g root -m 0755 "$repo_root/scripts/$script" \

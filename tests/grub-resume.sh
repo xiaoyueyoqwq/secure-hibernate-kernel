@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 helper="$repo_root/config/systemd/s4lockdown-grub-reboot"
 generator="$repo_root/config/grub/11_s4lockdown_resume"
+legacy_cleanup="$repo_root/scripts/disable-legacy-grub-config.sh"
 temp_dir=$(mktemp -d)
 trap 'rm -rf -- "$temp_dir"' EXIT
 
@@ -78,5 +79,25 @@ if [[ -z $update_line || -z $validation_line || $validation_line -le $update_lin
 	exit 1
 fi
 grep -Fq 'restoring the previous configuration' \
+	"$repo_root/scripts/set-default-kernel.sh"
+
+legacy_config="$temp_dir/99-z-s4lockdown-experiment.cfg"
+cat > "$legacy_config" <<'EOF'
+# elan100k A/B experiment layout: show the GRUB menu, keep the proven
+GRUB_TOP_LEVEL="/boot/vmlinuz-7.0.12-30-vmstat-hibernate"
+EOF
+"$legacy_cleanup" --path "$legacy_config"
+[[ ! -e $legacy_config ]]
+compgen -G "$legacy_config.disabled.*" >/dev/null
+
+cat > "$legacy_config" <<'EOF'
+GRUB_TOP_LEVEL="/boot/vmlinuz-unrecognized"
+EOF
+if "$legacy_cleanup" --path "$legacy_config" 2>/dev/null; then
+	printf 'Unrecognized legacy GRUB configuration was disabled.\n' >&2
+	exit 1
+fi
+[[ -f $legacy_config ]]
+grep -Fq 'disable-legacy-grub-config.sh' \
 	"$repo_root/scripts/set-default-kernel.sh"
 printf 'GRUB resume-entry tests passed\n'

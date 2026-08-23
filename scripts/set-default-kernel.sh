@@ -66,6 +66,9 @@ if $check_only; then
 	exit 0
 fi
 
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+"$repo_root/scripts/disable-legacy-grub-config.sh"
+
 config_file=/etc/default/grub.d/99-s4lockdown.cfg
 temp_dir=$(mktemp -d)
 temp_file="$temp_dir/99-s4lockdown.cfg"

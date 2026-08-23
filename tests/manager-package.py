@@ -59,6 +59,7 @@ class ManagerPackageTests(unittest.TestCase):
     def test_backend_resource_manifest_is_complete(self) -> None:
         scripts = [
             "extract-module-signature.pl",
+            "disable-legacy-grub-config.sh",
             "install-signed-packages.sh",
             "install-system-config.sh",
             "install-update-controller.sh",
