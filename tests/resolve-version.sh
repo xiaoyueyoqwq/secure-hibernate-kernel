@@ -25,6 +25,7 @@ missing_fixture=$(mktemp -d)
 trap 'rm -rf "$fixture_dir" "$empty_fixture" "$installed_fixture" "$missing_fixture"' EXIT
 : > "$fixture_dir/0001-hibernate-base.patch"
 : > "$fixture_dir/0002-vmstat-fix-race.patch"
+: > "$fixture_dir/0003-elan100k-force-dell0a86-i2c-100khz.patch"
 
 assert_output \
 	7.0.0-28.28 \
@@ -41,8 +42,8 @@ assert_output \
 assert_output \
 	7.0.0-29.31 \
 	7.0.0-29 \
-	-29-vmstat-hibernate \
-	ubuntu-7.0.0-29.31-vmstat \
+	-29-vmstat-elan100k-hibernate \
+	ubuntu-7.0.0-29.31-vmstat-elan100k \
 	"$fixture_dir"
 
 mkdir -p "$installed_fixture/scripts" "$missing_fixture/scripts"

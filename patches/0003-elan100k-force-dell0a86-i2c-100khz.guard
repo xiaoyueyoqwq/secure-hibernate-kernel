@@ -1,0 +1,2 @@
+drivers/i2c/i2c-core-acpi.c
+{ "DELL0A86", 0 },
