@@ -56,9 +56,9 @@ Supported values are:
 successful update or a retention-setting change. Valid values are `1`, `2`, and
 `3`; the default is `2`.
 Cleanup never removes the newly installed kernel, the running kernel, an
-official Ubuntu kernel, or the Ubuntu HWE meta-package. The running kernel can
-temporarily make the retained count exceed the selected history until a later
-update runs after reboot.
+official Ubuntu kernel, or the Ubuntu HWE meta-package. A running older project
+kernel remains protected until it is no longer running; changing the retention
+setting or completing a later update then removes other superseded releases.
 
 No policy restarts, powers off, hibernates, enrolls a MOK, or changes TPM/LUKS
 metadata. Successful installation creates the conventional
