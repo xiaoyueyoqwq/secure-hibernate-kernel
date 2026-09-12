@@ -33,6 +33,7 @@ export 'backend.dart'
         SystemActionStatus,
         SystemSnapshot,
         SystemStatus,
+        TpmHealth,
         UpdateControllerStatus,
         UpdatePolicy;
 export 'manager_updates.dart'
@@ -175,6 +176,7 @@ class ManagerController extends ChangeNotifier {
   bool lockdown = false;
   bool luks = false;
   bool tpmConfigured = false;
+  TpmHealth tpmHealth = TpmHealth.unchecked;
   bool hibernationCapacity = false;
   bool grubConfigured = false;
   bool headersInstalled = false;
@@ -566,9 +568,7 @@ class ManagerController extends ChangeNotifier {
         _activeKernelCheckStart == null &&
         _activeMokInspection == null &&
         backend != null &&
-        setupComplete &&
-        updater.controllerInstalled &&
-        updater.policy != UpdatePolicy.manual) {
+        setupComplete) {
       await _performCombinedStartupRefresh();
       return;
     }
@@ -607,7 +607,22 @@ class ManagerController extends ChangeNotifier {
       if (_disposed) return;
       _applyProjectMokInspection(inspection, publishFailure: false);
       if (result.status == ManagerActionStatus.success) {
-        _startKernelCheckMonitor(baselineStatus, baselineCheckedAt);
+        if (result.data.removedReleases.isNotEmpty) {
+          final releases = result.data.removedReleases.join(', ');
+          addLog('[System] Applied kernel retention and removed $releases');
+          addNotice(
+            type: ManagerNoticeType.info,
+            title: t.text('alerts.kernelsPrunedTitle'),
+            description: t.text('alerts.kernelsPrunedDescription', {
+              'releases': releases,
+            }),
+          );
+          await refreshSnapshot();
+          if (_disposed) return;
+        }
+        if (updater.policy != UpdatePolicy.manual) {
+          _startKernelCheckMonitor(baselineStatus, baselineCheckedAt);
+        }
       }
     } finally {
       if (identical(_activeKernelCheckStart, kernelStart)) {
@@ -786,6 +801,11 @@ class ManagerController extends ChangeNotifier {
     luks = status.luks;
     if (!luks) configureTpm = false;
     tpmConfigured = status.tpmConfigured;
+    if (!luks) {
+      tpmHealth = TpmHealth.notApplicable;
+    } else if (tpmHealth == TpmHealth.notApplicable) {
+      tpmHealth = TpmHealth.unchecked;
+    }
     hibernationCapacity = status.hibernatePartition;
     grubConfigured = status.grubUpdated;
     headersInstalled = status.projectHeadersInstalled;
@@ -1002,7 +1022,52 @@ class ManagerController extends ChangeNotifier {
         request.action.wireValue,
         result.error ?? t.text('alerts.unknownPrivilegedError'),
       );
+    } else if (result.status == ManagerActionStatus.success) {
+      _applySuccessfulActionHealth(request, result);
     }
+  }
+
+  void _applySuccessfulActionHealth(
+    ManagerActionRequest request,
+    ManagerActionResult result,
+  ) {
+    if (request.action == ManagerActionType.startupRefresh ||
+        request.action == ManagerActionType.verifyTpm ||
+        request.action == ManagerActionType.enrollTpm) {
+      _applyTpmInspection(
+        result.data,
+        announceStale: request.action != ManagerActionType.enrollTpm,
+      );
+    }
+  }
+
+  void _applyTpmInspection(
+    ManagerActionData data, {
+    required bool announceStale,
+  }) {
+    if (data.alreadyConfigured == null && data.tokens.isEmpty) {
+      if (!luks || !tpmConfigured) {
+        tpmHealth = TpmHealth.notApplicable;
+        notifyListeners();
+      }
+      return;
+    }
+    final previous = tpmHealth;
+    tpmHealth = data.tokens.any((token) => token.passed)
+        ? TpmHealth.working
+        : TpmHealth.stale;
+    if (announceStale &&
+        tpmHealth == TpmHealth.stale &&
+        previous != TpmHealth.stale) {
+      addLog('[Warning] TPM automatic unlock is stale');
+      addNotice(
+        type: ManagerNoticeType.warning,
+        title: t.text('alerts.tpmStaleTitle'),
+        description: t.text('alerts.tpmStaleDescription'),
+        duration: Duration.zero,
+      );
+    }
+    notifyListeners();
   }
 
   void _publishAuthorizationDenied({String? action}) {

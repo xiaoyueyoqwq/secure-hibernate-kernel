@@ -254,6 +254,10 @@ class NativeManagerBackend implements ManagerBackend {
           _passwordRecoveryVerified = true;
         } else if (result.action == ManagerActionType.verifyTpm) {
           _tpmUnlockVerified = result.data.alreadyConfigured == true;
+        } else if (result.action == ManagerActionType.startupRefresh &&
+            (result.data.alreadyConfigured != null ||
+                result.data.tokens.isNotEmpty)) {
+          _tpmUnlockVerified = result.data.alreadyConfigured == true;
         } else if (result.action == ManagerActionType.enrollTpm) {
           _passwordRecoveryVerified = true;
           _tpmUnlockVerified = true;
@@ -1312,6 +1316,11 @@ ManagerActionData _parseActionData(Map<String, dynamic> value) {
         'Helper returned an invalid project kernel history');
   }
   final removedPackages = _parseStringList(value['removedPackages'], 16);
+  final removedReleases = _parseStringList(
+    value['removedReleases'],
+    16,
+    pattern: _projectReleasePattern,
+  );
   final tokenIds = _parseStringList(
     value['addedTokenIds'],
     32,
@@ -1383,6 +1392,7 @@ ManagerActionData _parseActionData(Map<String, dynamic> value) {
     policy: policy,
     projectKernelHistory: projectKernelHistory as int?,
     removedRelease: removedRelease,
+    removedReleases: removedReleases,
     removedPackages: removedPackages,
     installedSourceVersion: sourceVersion,
     installedKernelRelease: kernelRelease,
@@ -1419,6 +1429,13 @@ void _requireSuccessData(
               !(data.mokStatus == 'pending' && data.oneTimePassword != null))) {
         throw const FormatException(
           'Helper returned an invalid project MOK inspection result',
+        );
+      }
+      if (request.action == ManagerActionType.startupRefresh &&
+          (data.alreadyConfigured != null || data.tokens.isNotEmpty) &&
+          data.alreadyConfigured != tokenVerified) {
+        throw const FormatException(
+          'Helper returned an inconsistent TPM inspection result',
         );
       }
     case ManagerActionType.cancelMok:

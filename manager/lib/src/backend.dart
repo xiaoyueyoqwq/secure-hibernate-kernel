@@ -107,6 +107,8 @@ class KernelInfo {
   bool get active => status == KernelStatus.active;
 }
 
+enum TpmHealth { unchecked, working, stale, notApplicable }
+
 class SystemStatus {
   const SystemStatus({
     required this.deviceName,
@@ -305,6 +307,7 @@ class ManagerActionData {
     this.policy,
     this.projectKernelHistory,
     this.removedRelease,
+    this.removedReleases = const [],
     this.removedPackages = const [],
     this.installedSourceVersion,
     this.installedKernelRelease,
@@ -324,6 +327,7 @@ class ManagerActionData {
   final UpdatePolicy? policy;
   final int? projectKernelHistory;
   final String? removedRelease;
+  final List<String> removedReleases;
   final List<String> removedPackages;
   final String? installedSourceVersion;
   final String? installedKernelRelease;

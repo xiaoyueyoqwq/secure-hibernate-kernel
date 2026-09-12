@@ -174,6 +174,7 @@ class _StartupRefreshCommandRunner implements CommandRunner {
           data: const {
             'mokStatus': 'enrolled',
             'fingerprintSha256': _projectFingerprint,
+            'removedReleases': <Object?>[],
           },
         ),
         stderr: '',
@@ -754,6 +755,53 @@ void main() {
     expect(result.status, ManagerActionStatus.cancelled);
     expect(result.error, isNull);
     expect(runner.pkexecCalls, 1);
+  });
+
+  test('parses startup-refresh kernel retention and TPM tokens', () {
+    const request = ManagerActionRequest(ManagerActionType.startupRefresh);
+    final result = parseManagerActionResponse(
+      request,
+      _helperResponse(
+        request.action,
+        data: const {
+          'mokStatus': 'enrolled',
+          'fingerprintSha256': _projectFingerprint,
+          'removedReleases': ['7.0.12-ubuntu28-s4lockdown'],
+          'alreadyConfigured': false,
+          'tokens': [
+            {'tokenId': '0', 'passed': false},
+          ],
+        },
+      ),
+    );
+    expect(result.status, ManagerActionStatus.success);
+    expect(
+      result.data.removedReleases,
+      ['7.0.12-ubuntu28-s4lockdown'],
+    );
+    expect(result.data.alreadyConfigured, isFalse);
+    expect(result.data.tokens.single.passed, isFalse);
+  });
+
+  test('rejects startup-refresh TPM fields that disagree with tokens', () {
+    const request = ManagerActionRequest(ManagerActionType.startupRefresh);
+    expect(
+      () => parseManagerActionResponse(
+        request,
+        _helperResponse(
+          request.action,
+          data: const {
+            'mokStatus': 'enrolled',
+            'fingerprintSha256': _projectFingerprint,
+            'alreadyConfigured': true,
+            'tokens': [
+              {'tokenId': '0', 'passed': false},
+            ],
+          },
+        ),
+      ),
+      throwsFormatException,
+    );
   });
 
   test('runs the fixed startup refresh through one pkexec call', () async {

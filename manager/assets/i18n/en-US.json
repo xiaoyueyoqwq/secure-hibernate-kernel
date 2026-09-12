@@ -23,7 +23,11 @@
     "privilegedActionFailedDescription": "{action}: {error}",
     "unknownPrivilegedError": "The privileged action returned no error details.",
     "managerUpdateOpenFailedTitle": "Could not open update",
-    "managerUpdateOpenFailedDescription": "Open the latest Manager Release from the project repository and install its Debian package manually."
+    "managerUpdateOpenFailedDescription": "Open the latest Manager Release from the project repository and install its Debian package manually.",
+    "tpmStaleTitle": "TPM automatic unlock is stale",
+    "tpmStaleDescription": "No enrolled TPM token can unlock the disk. Open Security to rebind with the LUKS recovery password.",
+    "kernelsPrunedTitle": "Removed extra project kernels",
+    "kernelsPrunedDescription": "Applied the selected rollback retention and removed: {releases}"
   },
   "notifications": {
     "managerUpdateTitle": "Manager update available",
@@ -288,9 +292,13 @@
     "tpmBinding": "TPM Automatic Unlock",
     "tpmConfigured": "Configured",
     "notConfigured": "Not Configured",
-    "tpmDescription": "The local crypttab requests TPM automatic unlock; token verification requires authorization.",
+    "tpmNeedsCheck": "Needs check",
+    "tpmStale": "Unlock failed",
+    "tpmDescription": "A working TPM token is required for automatic unlock. Crypttab alone does not prove that tokens still match the current PCR state.",
+    "tpmStaleDescription": "No enrolled TPM token can unlock the disk. Rebind with the LUKS recovery password. Old tokens are kept until you explicitly remove them.",
     "verifyTpm": "Verify TPM",
     "bindTpm": "Bind TPM",
+    "rebindTpm": "Rebind TPM",
     "note": "Note:",
     "recoveryNote": "Always keep a backup of your LUKS recovery password. If the motherboard is replaced or Secure Boot state changes significantly, the TPM will not release the key."
   },

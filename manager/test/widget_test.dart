@@ -295,14 +295,27 @@ class _StartupMokBackend extends _CancelledManagerBackend {
 
   @override
   Future<ProjectMokInspection> inspectProjectMok() async {
+    throw StateError('Startup MOK inspection must use startup-refresh');
+  }
+
+  @override
+  Future<ManagerActionResult> runManagerAction(
+    ManagerActionRequest request,
+  ) async {
+    expect(request.action, ManagerActionType.startupRefresh);
     mokInspections += 1;
-    return const ProjectMokInspection(
-      status: ProjectMokStatus.enrolled,
-      fingerprintSha256:
-          '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
-          'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+    return const ManagerActionResult(
+      action: ManagerActionType.startupRefresh,
+      status: ManagerActionStatus.success,
       error: null,
-      oneTimePassword: null,
+      data: ManagerActionData(
+        mokStatus: 'enrolled',
+        fingerprintSha256:
+            '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
+            'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+        alreadyConfigured: true,
+        tokens: [ManagerTokenResult(tokenId: '0', passed: true)],
+      ),
     );
   }
 }
@@ -365,6 +378,8 @@ class _StartupKernelCheckBackend extends _CancelledManagerBackend {
         fingerprintSha256:
             '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
             'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+        alreadyConfigured: true,
+        tokens: [ManagerTokenResult(tokenId: '0', passed: true)],
       ),
     );
   }
@@ -376,7 +391,7 @@ class _StartupKernelCheckBackend extends _CancelledManagerBackend {
 }
 
 class _StartupManualPolicyBackend extends _StartupMokBackend {
-  int startRequests = 0;
+  final List<ManagerActionType> actions = [];
 
   @override
   Future<SystemSnapshot> getSnapshot() async => testSnapshot(testUpdaterStatus(
@@ -389,8 +404,76 @@ class _StartupManualPolicyBackend extends _StartupMokBackend {
   Future<ManagerActionResult> runManagerAction(
     ManagerActionRequest request,
   ) async {
-    startRequests += 1;
+    actions.add(request.action);
     return super.runManagerAction(request);
+  }
+}
+
+class _StaleTpmStartupBackend extends _CancelledManagerBackend {
+  @override
+  Future<SetupProgress> getSetupProgress() async =>
+      const SetupProgress(checkpoint: null, completed: true);
+
+  @override
+  Future<SystemSnapshot> getSnapshot() async => SystemSnapshot(
+        collectedAt: DateTime.utc(2026),
+        systemStatus: const SystemStatus(
+          deviceName: 'test',
+          ubuntuVersion: 'Ubuntu',
+          secureBoot: true,
+          lockdown: true,
+          luks: true,
+          tpmConfigured: true,
+          hibernatePartition: true,
+          grubUpdated: true,
+          projectHeadersInstalled: true,
+        ),
+        kernels: const [
+          KernelInfo(
+            id: 'project',
+            version: '7.0.14-31-vmstat-elan100k-hibernate',
+            project: true,
+            status: KernelStatus.active,
+          ),
+          KernelInfo(
+            id: 'official',
+            version: '7.0.0-31-generic',
+            project: false,
+            status: KernelStatus.installed,
+          ),
+        ],
+        preflightDiagnostics: const [],
+        updater: testUpdaterStatus(
+          status: 'manual',
+          checkedAt: '2026-08-05T10:28:08Z',
+          policy: UpdatePolicy.manual,
+        ),
+        warnings: const [],
+      );
+
+  @override
+  Future<ProjectMokInspection> inspectProjectMok() async {
+    throw StateError('Startup MOK inspection must use startup-refresh');
+  }
+
+  @override
+  Future<ManagerActionResult> runManagerAction(
+    ManagerActionRequest request,
+  ) async {
+    expect(request.action, ManagerActionType.startupRefresh);
+    return const ManagerActionResult(
+      action: ManagerActionType.startupRefresh,
+      status: ManagerActionStatus.success,
+      error: null,
+      data: ManagerActionData(
+        mokStatus: 'enrolled',
+        fingerprintSha256:
+            '5F:59:E3:E3:8F:5A:3C:3F:27:6B:EC:A6:C2:AB:D3:CB:20:29:6D:7F:'
+            'D3:D0:A2:DB:9D:BC:83:B0:DD:88:97:11',
+        alreadyConfigured: false,
+        tokens: [ManagerTokenResult(tokenId: '0', passed: false)],
+      ),
+    );
   }
 }
 
@@ -1413,7 +1496,52 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(backend.startRequests, 0);
-    expect(backend.mokInspections, 1);
+    expect(backend.actions, [ManagerActionType.startupRefresh]);
+    expect(
+      backend.actions.where((action) => action == ManagerActionType.startCheck),
+      isEmpty,
+    );
+  });
+
+  testWidgets('stale TPM keeps Overview from reporting all checks passed',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _StaleTpmStartupBackend();
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(
+        translations: translations,
+        backend: backend,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('All required checks passed'), findsNothing);
+    expect(find.text('Ready'), findsNothing);
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('Protected'), findsNothing);
+    expect(find.text('TPM automatic unlock is stale'), findsOneWidget);
+  });
+
+  testWidgets('stale TPM offers rebind on the Security page', (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final backend = _StaleTpmStartupBackend();
+
+    await tester.pumpWidget(
+      SecureHibernateManagerApp(
+        translations: translations,
+        backend: backend,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Security & Hardware').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unlock failed'), findsOneWidget);
+    expect(find.text('Rebind TPM'), findsOneWidget);
+    expect(find.text('Configured'), findsNothing);
+    expect(find.text('Verify TPM'), findsNothing);
   });
 }

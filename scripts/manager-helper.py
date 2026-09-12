@@ -624,10 +624,39 @@ def action_inspect_mok() -> dict[str, Any]:
     }
 
 
+def crypttab_requests_tpm(mapper: str) -> bool:
+    for name, _source, _key, options in parse_crypttab():
+        if name != mapper:
+            continue
+        return any(
+            option.startswith("tpm2-device=") for option in options.split(",")
+        )
+    return False
+
+
+def inspect_startup_tpm() -> dict[str, Any] | None:
+    try:
+        mapper, _device = root_luks_entry()
+    except HelperError:
+        return None
+    if not crypttab_requests_tpm(mapper):
+        return None
+    return action_verify_tpm()
+
+
 def action_startup_refresh() -> dict[str, Any]:
     inspection = action_inspect_mok()
-    check = action_start_check()
-    return {**inspection, **check}
+    policy, history = read_update_configuration()
+    payload: dict[str, Any] = {
+        **inspection,
+        "removedReleases": prune_project_kernels(history),
+    }
+    tpm = inspect_startup_tpm()
+    if tpm is not None:
+        payload.update(tpm)
+    if policy != "manual":
+        payload.update(action_start_check())
+    return payload
 
 
 def action_cancel_mok() -> dict[str, Any]:

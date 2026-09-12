@@ -23,7 +23,11 @@
     "privilegedActionFailedDescription": "{action}：{error}",
     "unknownPrivilegedError": "特权操作未返回错误详情。",
     "managerUpdateOpenFailedTitle": "无法打开更新页面",
-    "managerUpdateOpenFailedDescription": "请从项目仓库打开最新的管理器 Release，并手动安装其中的 Debian 软件包。"
+    "managerUpdateOpenFailedDescription": "请从项目仓库打开最新的管理器 Release，并手动安装其中的 Debian 软件包。",
+    "tpmStaleTitle": "TPM 自动解锁已失效",
+    "tpmStaleDescription": "当前没有可用的 TPM token 能解锁磁盘。请到「安全与硬件」使用 LUKS 恢复密码重新绑定。",
+    "kernelsPrunedTitle": "已清理超额项目内核",
+    "kernelsPrunedDescription": "已按所选回退保留数量删除：{releases}"
   },
   "notifications": {
     "managerUpdateTitle": "有新的管理器版本",
@@ -288,9 +292,13 @@
     "tpmBinding": "TPM 自动解锁",
     "tpmConfigured": "已配置",
     "notConfigured": "未配置",
-    "tpmDescription": "本机 crypttab 已请求 TPM 自动解锁；验证 token 需要授权。",
+    "tpmNeedsCheck": "需要检查",
+    "tpmStale": "解锁失败",
+    "tpmDescription": "自动解锁需要可用的 TPM token。仅有 crypttab 配置并不能证明 token 仍匹配当前 PCR 状态。",
+    "tpmStaleDescription": "当前没有可用的 TPM token 能解锁磁盘。请使用 LUKS 恢复密码重新绑定。旧 token 会保留到你明确授权删除为止。",
     "verifyTpm": "验证 TPM",
     "bindTpm": "绑定 TPM",
+    "rebindTpm": "重新绑定 TPM",
     "note": "注意：",
     "recoveryNote": "请始终保留 LUKS 恢复密码备份。更换主板或 Secure Boot 状态发生明显变化后，TPM 将不会释放密钥。"
   },

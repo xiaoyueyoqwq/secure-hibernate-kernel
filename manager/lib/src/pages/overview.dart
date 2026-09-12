@@ -21,9 +21,12 @@ class OverviewPage extends StatelessWidget {
         manager.officialFallbackInstalled;
     final managerUpdateAvailable =
         manager.managerUpdate.state == ManagerUpdateState.available;
+    final tpmReady = manager.tpmHealth == TpmHealth.working ||
+        manager.tpmHealth == TpmHealth.notApplicable;
     final enhancementRecommended =
         operational && !manager.luks && !managerUpdateAvailable;
-    final ready = operational && manager.luks && !managerUpdateAvailable;
+    final ready =
+        operational && manager.luks && tpmReady && !managerUpdateAvailable;
     final policy = switch (manager.updatePolicy) {
       UpdatePolicy.automaticInstall => t.text('overview.automaticInstall'),
       UpdatePolicy.checkAndNotify => t.text('overview.checkAndNotify'),
@@ -188,7 +191,8 @@ class OverviewPage extends StatelessWidget {
           description: t.text('overview.securityDescription'),
           status: !manager.luks
               ? t.text('overview.securityEnhancementRecommended')
-              : manager.projectMokStatus == ProjectMokStatus.enrolled
+              : manager.projectMokStatus == ProjectMokStatus.enrolled &&
+                      tpmReady
                   ? t.text('overview.protected')
                   : t.text('overview.review'),
           openLabel: t.text('common.open'),

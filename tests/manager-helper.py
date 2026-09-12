@@ -443,6 +443,37 @@ class ManagerHelperTests(unittest.TestCase):
         )
         self.assertEqual(commands[-1], [helper.EXECUTABLES["update_grub"]])
 
+    def test_prune_project_kernels_keeps_retention_without_removing(self) -> None:
+        releases = {
+            "7.0.14-31-vmstat-elan100k-hibernate": [
+                "linux-image-7.0.14-31-vmstat-elan100k-hibernate",
+                "linux-headers-7.0.14-31-vmstat-elan100k-hibernate",
+            ],
+            "7.0.12-30-vmstat-elan100k-hibernate": [
+                "linux-image-7.0.12-30-vmstat-elan100k-hibernate",
+                "linux-headers-7.0.12-30-vmstat-elan100k-hibernate",
+            ],
+            "7.0.0-31-generic": ["linux-image-7.0.0-31-generic"],
+        }
+        commands = []
+
+        with patch.object(helper, "installed_kernel_packages", return_value=releases), \
+                patch.object(helper.os, "uname", return_value=SimpleNamespace(
+                    release="7.0.14-31-vmstat-elan100k-hibernate"
+                )), patch.object(
+                    helper, "configured_grub_top_level_release",
+                    return_value="7.0.14-31-vmstat-elan100k-hibernate",
+                ), patch.object(helper, "read_json", return_value={}), patch.object(
+                    helper, "run",
+                    side_effect=lambda command, **_kwargs: (
+                        commands.append(command) or completed()
+                    ),
+                ):
+            removed = helper.prune_project_kernels(1)
+
+        self.assertEqual(removed, [])
+        self.assertEqual(commands, [])
+
     def test_configuration_rejects_non_ascii_text_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "s4lockdown-update.conf"
@@ -762,23 +793,124 @@ class ManagerHelperTests(unittest.TestCase):
                 "fingerprintSha256": helper.PROJECT_FINGERPRINT,
             }
 
+        def prune(history: int):
+            events.append(f"prune:{history}")
+            return ["7.0.12-ubuntu28-s4lockdown"]
+
+        def tpm():
+            events.append("inspect-tpm")
+            return {
+                "alreadyConfigured": True,
+                "tokens": [{"tokenId": "0", "passed": True}],
+            }
+
         def start():
             events.append("start-check")
             return {"unit": helper.CHECK_UNIT, "stdout": "", "stderr": ""}
 
         with patch.object(
             helper, "action_inspect_mok", side_effect=inspect
+        ), patch.object(
+            helper, "read_update_configuration",
+            return_value=("check-and-notify", 1),
+        ), patch.object(
+            helper, "prune_project_kernels", side_effect=prune
+        ), patch.object(
+            helper, "inspect_startup_tpm", side_effect=tpm
         ), patch.object(helper, "action_start_check", side_effect=start):
             result = helper.dispatch(SimpleNamespace(action="startup-refresh"))
 
-        self.assertEqual(events, ["inspect-mok", "start-check"])
+        self.assertEqual(events, [
+            "inspect-mok", "prune:1", "inspect-tpm", "start-check",
+        ])
         self.assertEqual(result, {
             "mokStatus": "enrolled",
             "fingerprintSha256": helper.PROJECT_FINGERPRINT,
+            "removedReleases": ["7.0.12-ubuntu28-s4lockdown"],
+            "alreadyConfigured": True,
+            "tokens": [{"tokenId": "0", "passed": True}],
             "unit": helper.CHECK_UNIT,
             "stdout": "",
             "stderr": "",
         })
+
+    def test_startup_refresh_returns_empty_retention_without_package_removal(self) -> None:
+        with patch.object(
+            helper, "action_inspect_mok",
+            return_value={
+                "mokStatus": "enrolled",
+                "fingerprintSha256": helper.PROJECT_FINGERPRINT,
+            },
+        ), patch.object(
+            helper, "read_update_configuration",
+            return_value=("check-and-notify", 1),
+        ), patch.object(
+            helper, "prune_project_kernels", return_value=[]
+        ) as prune, patch.object(
+            helper, "inspect_startup_tpm", return_value=None
+        ), patch.object(
+            helper, "action_start_check",
+            return_value={"unit": helper.CHECK_UNIT, "stdout": "", "stderr": ""},
+        ), patch.object(
+            helper, "run",
+            side_effect=AssertionError("dpkg must not be called"),
+        ):
+            result = helper.dispatch(SimpleNamespace(action="startup-refresh"))
+
+        prune.assert_called_once_with(1)
+        self.assertEqual(result["removedReleases"], [])
+        self.assertNotIn("alreadyConfigured", result)
+        self.assertNotIn("tokens", result)
+
+    def test_startup_refresh_reports_failed_tpm_without_error(self) -> None:
+        tokens = [{"tokenId": "0", "passed": False}]
+        with patch.object(
+            helper, "action_inspect_mok",
+            return_value={
+                "mokStatus": "enrolled",
+                "fingerprintSha256": helper.PROJECT_FINGERPRINT,
+            },
+        ), patch.object(
+            helper, "read_update_configuration",
+            return_value=("check-and-notify", 2),
+        ), patch.object(
+            helper, "prune_project_kernels", return_value=[]
+        ), patch.object(
+            helper, "inspect_startup_tpm",
+            return_value={"alreadyConfigured": False, "tokens": tokens},
+        ), patch.object(
+            helper, "action_start_check",
+            return_value={"unit": helper.CHECK_UNIT, "stdout": "", "stderr": ""},
+        ):
+            result = helper.dispatch(SimpleNamespace(action="startup-refresh"))
+
+        self.assertFalse(result["alreadyConfigured"])
+        self.assertEqual(result["tokens"], tokens)
+        self.assertEqual(result["removedReleases"], [])
+        self.assertEqual(result["unit"], helper.CHECK_UNIT)
+
+    def test_startup_refresh_skips_kernel_check_for_manual_policy(self) -> None:
+        with patch.object(
+            helper, "action_inspect_mok",
+            return_value={
+                "mokStatus": "enrolled",
+                "fingerprintSha256": helper.PROJECT_FINGERPRINT,
+            },
+        ), patch.object(
+            helper, "read_update_configuration",
+            return_value=("manual", 1),
+        ), patch.object(
+            helper, "prune_project_kernels", return_value=[]
+        ), patch.object(
+            helper, "inspect_startup_tpm", return_value=None
+        ), patch.object(
+            helper, "action_start_check",
+            side_effect=AssertionError("start-check must not run for manual policy"),
+        ):
+            result = helper.dispatch(SimpleNamespace(action="startup-refresh"))
+
+        self.assertEqual(result["removedReleases"], [])
+        self.assertNotIn("unit", result)
 
     def test_mok_cancel_refuses_unrelated_pending_request(self) -> None:
         with patch.object(

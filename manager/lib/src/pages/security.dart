@@ -44,15 +44,16 @@ class _SecurityPageState extends State<SecurityPage> {
     final manager = context.manager;
     if (!manager.native) {
       manager.addLog(
-        manager.tpmConfigured
+        manager.tpmHealth == TpmHealth.working
             ? '[System] Test backend requested TPM verification'
             : '[System] Test backend requested TPM binding',
       );
       return;
     }
-    final action = manager.tpmConfigured
-        ? ManagerActionType.verifyTpm
-        : ManagerActionType.enrollTpm;
+    final enroll = manager.tpmHealth == TpmHealth.stale ||
+        (manager.tpmHealth != TpmHealth.working && !manager.tpmConfigured);
+    final action =
+        enroll ? ManagerActionType.enrollTpm : ManagerActionType.verifyTpm;
     final recoveryPassword = action == ManagerActionType.enrollTpm
         ? await showLuksRecoveryPasswordDialog(context)
         : null;
@@ -181,22 +182,35 @@ class _SecurityPageState extends State<SecurityPage> {
           label: t.text('security.tpmBinding'),
           value: Text(!manager.luks
               ? t.text('wizard.details.notApplicable')
-              : manager.tpmConfigured
+              : manager.tpmHealth == TpmHealth.working
                   ? t.text('security.tpmConfigured')
-                  : t.text('security.notConfigured')),
+                  : manager.tpmHealth == TpmHealth.stale
+                      ? t.text('security.tpmStale')
+                      : manager.tpmHealth == TpmHealth.unchecked &&
+                              manager.tpmConfigured
+                          ? t.text('security.tpmNeedsCheck')
+                          : t.text('security.notConfigured')),
           status: !manager.luks
               ? StatusKind.warning
-              : manager.tpmConfigured
+              : manager.tpmHealth == TpmHealth.working
                   ? StatusKind.ok
-                  : StatusKind.info,
-          description: manager.luks
-              ? t.text('security.tpmDescription')
-              : t.text('wizard.details.tpmUnavailableWithoutLuks'),
+                  : manager.tpmHealth == TpmHealth.stale
+                      ? StatusKind.warning
+                      : StatusKind.info,
+          description: !manager.luks
+              ? t.text('wizard.details.tpmUnavailableWithoutLuks')
+              : manager.tpmHealth == TpmHealth.stale
+                  ? t.text('security.tpmStaleDescription')
+                  : t.text('security.tpmDescription'),
           action: manager.luks
               ? AppButton(
-                  label: manager.tpmConfigured
-                      ? t.text('security.verifyTpm')
-                      : t.text('security.bindTpm'),
+                  label: manager.tpmHealth == TpmHealth.stale
+                      ? t.text('security.rebindTpm')
+                      : manager.tpmHealth == TpmHealth.working ||
+                              (manager.tpmHealth == TpmHealth.unchecked &&
+                                  manager.tpmConfigured)
+                          ? t.text('security.verifyTpm')
+                          : t.text('security.bindTpm'),
                   tone: ButtonTone.ghost,
                   busy: actionBusy,
                   disabled:
