@@ -6,6 +6,8 @@ the live Secure Boot and storage state, manages verified updates, prepares the
 project MOK enrollment request, and configures TPM-backed LUKS unlock when the
 machine supports it.
 
+**[📦 Download Latest Manager Release](https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/releases?q=manager-v&expanded=true)**
+
 The production entry point always uses the fixed native backend. Unit and
 Widget tests inject a deterministic in-memory backend; production builds never
 substitute simulated system state.

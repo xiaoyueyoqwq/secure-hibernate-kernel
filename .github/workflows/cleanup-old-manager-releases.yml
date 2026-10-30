@@ -1,0 +1,66 @@
+name: Clean up old Manager releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_count:
+        description: 'Number of recent Manager releases to keep'
+        required: true
+        default: '5'
+        type: number
+      dry_run:
+        description: 'Dry run (do not delete)'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Clean up old Manager releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEEP_COUNT: ${{ inputs.keep_count }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          echo "Fetching Manager releases..."
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("manager-v"))) | .tag_name' \
+            > all_manager_releases.txt
+
+          total_count=$(wc -l < all_manager_releases.txt)
+          echo "Found $total_count Manager releases"
+
+          if [ "$total_count" -le "$KEEP_COUNT" ]; then
+            echo "No cleanup needed (total: $total_count, keep: $KEEP_COUNT)"
+            exit 0
+          fi
+
+          echo "Keeping the latest $KEEP_COUNT releases"
+          tail -n +$((KEEP_COUNT + 1)) all_manager_releases.txt > releases_to_delete.txt
+
+          delete_count=$(wc -l < releases_to_delete.txt)
+          echo "Will delete $delete_count old Manager releases:"
+          cat releases_to_delete.txt
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo ""
+            echo "DRY RUN MODE - No releases were deleted"
+            echo "Set dry_run to false to actually delete these releases"
+          else
+            echo ""
+            echo "Deleting old Manager releases..."
+            while IFS= read -r tag; do
+              echo "Deleting $tag..."
+              gh release delete "$tag" --yes || echo "Failed to delete $tag"
+              # Also delete the tag
+              git push origin --delete "$tag" 2>/dev/null || echo "Tag $tag already deleted or doesn't exist"
+            done < releases_to_delete.txt
+            echo "Cleanup complete"
+          fi

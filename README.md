@@ -12,6 +12,12 @@ image and modules with a dedicated project MOK, and publishes an authenticated
 Release. Official Ubuntu kernels and the HWE meta-package remain installed as
 independent recovery paths.
 
+## Downloads
+
+- **[📦 Latest Manager](https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/releases?q=manager-v&expanded=true)** — Desktop application for installation and updates
+- **[🐧 Latest Kernel](https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/releases?q=ubuntu-&expanded=true)** — Signed hibernation kernel packages
+- [📋 All Releases](https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/releases)
+
 ## Security boundary
 
 Linux normally blocks hibernation during integrity lockdown because a resume

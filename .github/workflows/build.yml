@@ -275,4 +275,4 @@ jobs:
             --title "Ubuntu hibernation kernel $SOURCE_PACKAGE_VERSION" \
             --target "$GITHUB_SHA" \
             --notes-file "$notes"
-          gh release edit "$MARKER_TAG" --draft=false
+          gh release edit "$MARKER_TAG" --draft=false --latest=true
