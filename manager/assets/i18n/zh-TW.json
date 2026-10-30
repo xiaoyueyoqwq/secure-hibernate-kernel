@@ -149,7 +149,7 @@
     "noPartition": "找不到合適的休眠分割區。",
     "restartRequired": "需要重新啟動",
     "passwordUpdateRequired": "需要更新密碼",
-    "restartDescription": "繼續安裝前，請在 MokManager 中確認專案憑證。",
+    "restartDescription": "裝置需要重新啟動以繼續安裝。繼續前請確認您已妥善儲存了 MokManager 一次性密碼，遺失將導致安裝失敗！",
     "bootRestartRequired": "需要驗證啟動",
     "bootRestartDescription": "設定 TPM 前需要重新啟動進入已安裝的專案核心。管理器不會自動重新啟動系統。",
     "completedDescription": "安裝已完成。需要重新啟動時管理器會發出通知，但不會自動重新啟動。",

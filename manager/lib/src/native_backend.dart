@@ -420,9 +420,11 @@ class NativeManagerBackend implements ManagerBackend {
   ) async {
     await saveSetupCheckpoint(checkpoint);
     try {
+      // Use -i to ignore inhibitors during setup restarts
+      // This is necessary for MOK enrollment and kernel verification
       final result = await _commands.run(
         _pkexecPath,
-        const ['/usr/bin/systemctl', 'reboot'],
+        const ['/usr/bin/systemctl', 'reboot', '-i'],
         timeout: const Duration(minutes: 5),
       );
       if (result.exitCode == 0) {

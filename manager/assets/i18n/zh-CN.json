@@ -149,7 +149,7 @@
     "noPartition": "未找到合适的休眠分区。",
     "restartRequired": "需要重启",
     "passwordUpdateRequired": "需要更新密码",
-    "restartDescription": "继续安装前，请在 MokManager 中确认项目证书。",
+    "restartDescription": "设备需要重启以继续安装。继续前请确认您已妥善保存了 MokManager 一次性密码，遗失将导致安装失败！",
     "bootRestartRequired": "需要验证启动",
     "bootRestartDescription": "配置 TPM 前需要重启进入已安装的项目内核。管理器不会自动重启系统。",
     "completedDescription": "安装已完成。需要重启时管理器会发出通知，但不会自动重启。",

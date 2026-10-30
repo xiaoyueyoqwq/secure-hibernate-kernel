@@ -149,7 +149,7 @@
     "noPartition": "No suitable hibernation partition was found.",
     "restartRequired": "Restart required",
     "passwordUpdateRequired": "Password update required",
-    "restartDescription": "Confirm the project certificate in MokManager before installation continues.",
+    "restartDescription": "Device must restart to continue installation. Please ensure you have safely saved the MokManager one-time password before proceeding. Losing it will cause installation failure!",
     "bootRestartRequired": "Boot verification required",
     "bootRestartDescription": "Restart into the installed project kernel before TPM enrollment. The manager never restarts the system automatically.",
     "completedDescription": "Setup completed. The manager will notify you when a restart is required; it will not restart automatically.",

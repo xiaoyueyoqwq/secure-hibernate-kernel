@@ -1080,6 +1080,7 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
           WizardCallout(
             title: t.text('wizard.restartRequired'),
             description: t.text('wizard.restartDescription'),
+            danger: true,
           ),
           const SizedBox(height: 16),
         ],
@@ -1335,11 +1336,13 @@ class WizardCallout extends StatelessWidget {
   const WizardCallout({
     required this.title,
     required this.description,
+    this.danger = false,
     super.key,
   });
 
   final String title;
   final String description;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
@@ -1348,12 +1351,18 @@ class WizardCallout extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: dark
-            ? const Color(0xff451a03).withValues(alpha: 0.40)
-            : const Color(0xfffffbeb),
+        color: danger
+            ? (dark
+                ? const Color(0xff450a0a).withValues(alpha: 0.40)
+                : const Color(0xfffef2f2))
+            : (dark
+                ? const Color(0xff451a03).withValues(alpha: 0.40)
+                : const Color(0xfffffbeb)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: dark ? const Color(0xff92400e) : const Color(0xfffcd34d),
+          color: danger
+              ? (dark ? const Color(0xffb91c1c) : const Color(0xffdc2626))
+              : (dark ? const Color(0xff92400e) : const Color(0xfffcd34d)),
         ),
       ),
       child: Column(
@@ -1362,7 +1371,9 @@ class WizardCallout extends StatelessWidget {
           Text(
             title,
             style: TextStyle(
-              color: dark ? const Color(0xfffcd34d) : const Color(0xff78350f),
+              color: danger
+                  ? (dark ? const Color(0xfff87171) : const Color(0xffb91c1c))
+                  : (dark ? const Color(0xfffcd34d) : const Color(0xff78350f)),
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -1371,7 +1382,9 @@ class WizardCallout extends StatelessWidget {
           Text(
             description,
             style: TextStyle(
-              color: dark ? const Color(0xfffcd34d) : const Color(0xff78350f),
+              color: danger
+                  ? (dark ? const Color(0xfff87171) : const Color(0xffb91c1c))
+                  : (dark ? const Color(0xfffcd34d) : const Color(0xff78350f)),
               fontSize: 12,
               height: 1.6,
             ),
