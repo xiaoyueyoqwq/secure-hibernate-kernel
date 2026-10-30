@@ -406,6 +406,72 @@ def resolve_version(resolver: Path, requested: str) -> dict[str, str]:
     return values
 
 
+def get_latest_project_kernel_release(
+    repository: str,
+    testing: bool = False,
+) -> tuple[str, str] | None:
+    """Query GitHub API for the latest project kernel Release.
+
+    Returns (tag, source_version) if a project kernel Release exists,
+    or None if no project kernel Releases are found or on API failure.
+    """
+    if testing:
+        fixture = os.environ.get("S4LOCKDOWN_TEST_LATEST_KERNEL_RELEASE")
+        if fixture:
+            parts = fixture.split(",", 1)
+            if len(parts) == 2:
+                return (parts[0], parts[1])
+        return None
+
+    try:
+        status, content = download_json(
+            f"https://api.github.com/repos/{repository}/releases?per_page=30"
+        )
+    except UpdateError:
+        # Network or API failure - fall back to Ubuntu HWE version
+        return None
+
+    if status != 200:
+        return None
+
+    try:
+        document = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(document, list):
+        return None
+
+    # Find the latest project kernel Release (tag starting with "ubuntu-")
+    project_releases: list[tuple[str, str]] = []
+    for entry in document:
+        if (
+            not isinstance(entry, dict)
+            or entry.get("draft") is not False
+            or entry.get("prerelease") is not False
+        ):
+            continue
+        tag = entry.get("tag_name")
+        if not isinstance(tag, str) or not tag.startswith("ubuntu-"):
+            continue
+
+        # Extract source version from tag: ubuntu-7.0.0-34.34-vmstat-elan100k -> 7.0.0-34.34
+        # Tag format: ubuntu-{source_version}-{patch_tags}
+        tag_without_prefix = tag.removeprefix("ubuntu-")
+        # Source version matches x.y.z-nn.nn pattern at the start
+        match = re.match(r'^([0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+)', tag_without_prefix)
+        if match:
+            source_version = match.group(1)
+            if SOURCE_VERSION.fullmatch(source_version):
+                project_releases.append((tag, source_version))
+
+    if not project_releases:
+        return None
+
+    # Return the first (most recent) project kernel Release
+    return project_releases[0]
+
+
 @contextmanager
 def update_lock(path: Path, *, wait: bool = False) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1054,12 +1120,23 @@ def check_command(arguments: argparse.Namespace) -> int:
             )
             check_manager_release(cache_dir, testing)
 
-            resolved = resolve_version(resolver, arguments.source_version)
-            candidate = resolved["source_package_version"]
-            tag = resolved["marker_tag"]
+            # Try to get the latest project kernel Release first
             repository = os.environ.get(
                 "S4LOCKDOWN_GITHUB_REPOSITORY", PROJECT_REPOSITORY
             )
+            latest_project_release = get_latest_project_kernel_release(repository, testing)
+
+            if latest_project_release and arguments.source_version == "auto":
+                # Use the latest project Release instead of Ubuntu HWE version
+                tag, candidate = latest_project_release
+                # Still need to resolve for other metadata like local_version
+                resolved = resolve_version(resolver, candidate)
+                resolved["marker_tag"] = tag  # Override with the actual project Release tag
+            else:
+                # Fall back to Ubuntu HWE version resolution
+                resolved = resolve_version(resolver, arguments.source_version)
+                candidate = resolved["source_package_version"]
+                tag = resolved["marker_tag"]
             partial = cache_dir / f".partial.{tag}"
             for entry in cache_dir.iterdir():
                 if entry.name.startswith(".partial.") and entry != partial:
