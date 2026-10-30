@@ -288,7 +288,7 @@ class ManagerReleaseTests(unittest.TestCase):
         self.assertNotIn("tags:", triggers)
         self.assertNotIn("ubuntu-", triggers)
         self.assertNotIn("schedule:", triggers)
-        self.assertIn("flutter-version: 3.44.8", workflow)
+        self.assertIn("flutter-version: 3.47.9", workflow)
         flutter_action = (
             "subosito/flutter-action@"
             "1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0"
