@@ -251,7 +251,7 @@ class _FirstRunApplication extends StatelessWidget {
                   const SizedBox(width: 12),
                   AppSelect<AppLanguage>(
                     value: manager.language,
-                    width: 160,
+                    width: 200,
                     options: [
                       AppSelectOption(
                         AppLanguage.enUS,
