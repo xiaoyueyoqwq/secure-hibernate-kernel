@@ -268,6 +268,15 @@ def recovery_progress(check_state: dict[str, Any]) -> tuple[str, int] | None:
 
 
 def recover_verified_release() -> None:
+    # Clear any stale error state before starting recovery
+    check_state_path = CHECK_STATE_PATH
+    if check_state_path.exists():
+        check_state = read_json(check_state_path)
+        status = check_state.get("status")
+        # If there's a terminal error state, clear it to allow fresh retry
+        if status in {"release-unavailable", "check-failed", "downgrade-refused"}:
+            check_state_path.unlink()
+
     baseline = state_file_identity(CHECK_STATE_PATH)
     run([EXECUTABLES["systemctl"], "reset-failed", CHECK_UNIT], check=False)
     run([EXECUTABLES["systemctl"], "start", "--no-block", CHECK_UNIT])
@@ -293,9 +302,17 @@ def recover_verified_release() -> None:
                         "Updater reported a verified Release but did not retain its staged files"
                     )
                 return
+            if status == "release-unavailable" and observed_new_state:
+                # If release is unavailable, it might be due to stale state
+                # Provide a more helpful error message
+                detail = (
+                    "No matching project kernel Release found. "
+                    "The system may be running a newer Ubuntu kernel than the latest "
+                    "available project Release. Check the Releases page for available versions."
+                )
+                raise HelperError(detail)
             if status in {
                 "check-failed",
-                "release-unavailable",
                 "downgrade-refused",
                 "current",
                 "paused",
