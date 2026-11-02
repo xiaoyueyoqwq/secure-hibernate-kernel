@@ -4,7 +4,9 @@ on:
   workflow_call:
   workflow_dispatch:
 
-permissions: {}
+# Job-level permissions override this when specified
+permissions:
+  contents: read
 
 concurrency:
   group: manager-release
