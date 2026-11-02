@@ -228,7 +228,7 @@ class ManagerHelperTests(unittest.TestCase):
             runner = Mock(side_effect=[
                 completed(),
                 completed(),
-                completed(returncode=3),
+                completed(b"inactive\n"),
             ])
             with patch.object(helper, "ROOT_STATE_PATH", state), patch.object(
                 helper, "CHECK_STATE_PATH", check_state
@@ -247,12 +247,88 @@ class ManagerHelperTests(unittest.TestCase):
 
             sleep.assert_called_once_with(0.5)
             self.assertEqual(runner.call_args_list[-1], call(
-                [helper.EXECUTABLES["systemctl"], "is-active", "--quiet", helper.CHECK_UNIT],
+                [
+                    helper.EXECUTABLES["systemctl"],
+                    "show",
+                    "--property=ActiveState",
+                    "--value",
+                    helper.CHECK_UNIT,
+                ],
                 check=False,
             ))
             progress = json.loads(state.read_text(encoding="utf-8"))
             self.assertEqual(progress["install_phase"], "authorizing-version")
             self.assertEqual(progress["install_progress"], 64)
+
+    def test_recovery_waits_while_the_oneshot_service_is_activating(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            check_state = Path(directory) / "check-state.json"
+            staged = Path(directory) / "staged"
+            check_state.write_text('{"status":"verified"}\n', encoding="utf-8")
+            # Far more polls than the inactive limit; "activating" must not count.
+            polls = 60
+            check_states = iter(
+                [{"status": "indexing"}] * polls + [{"status": "verified"}]
+            )
+
+            def read_state(path):
+                if path == check_state:
+                    current = next(check_states)
+                    if current["status"] == "verified":
+                        staged.mkdir()
+                    return current
+                if not path.exists():
+                    return {}
+                return json.loads(path.read_text(encoding="utf-8"))
+
+            runner = Mock(side_effect=[
+                completed(),
+                completed(),
+                *[completed(b"activating\n")] * polls,
+            ])
+            identities = [(1, 1)] + [(2, 2)] * polls + [(2, 3)]
+            with patch.object(helper, "ROOT_STATE_PATH", state), patch.object(
+                helper, "CHECK_STATE_PATH", check_state
+            ), patch.object(
+                helper, "STAGED_RELEASE_PATH", staged
+            ), patch.object(
+                helper, "state_file_identity", side_effect=identities
+            ), patch.object(
+                helper, "read_json", side_effect=read_state
+            ), patch.object(helper.time, "sleep"), patch.object(
+                helper, "run", runner
+            ):
+                helper.recover_verified_release()
+
+            self.assertTrue(staged.is_dir())
+
+    def test_recovery_fails_after_the_service_stays_inactive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            check_state = Path(directory) / "check-state.json"
+            staged = Path(directory) / "staged"
+            check_state.write_text('{"status":"verified"}\n', encoding="utf-8")
+            runner = Mock(side_effect=[
+                completed(),
+                completed(),
+                *[completed(b"inactive\n")] * 20,
+            ])
+            with patch.object(helper, "ROOT_STATE_PATH", state), patch.object(
+                helper, "CHECK_STATE_PATH", check_state
+            ), patch.object(
+                helper, "STAGED_RELEASE_PATH", staged
+            ), patch.object(
+                helper, "state_file_identity", return_value=(1, 1)
+            ), patch.object(
+                helper, "read_json", return_value={}
+            ), patch.object(helper.time, "sleep"), patch.object(
+                helper, "run", runner
+            ):
+                with self.assertRaisesRegex(
+                    helper.HelperError, "stopped without a verified Release"
+                ):
+                    helper.recover_verified_release()
 
     def test_new_mok_password_uses_memorable_unambiguous_format(self) -> None:
         for _ in range(100):

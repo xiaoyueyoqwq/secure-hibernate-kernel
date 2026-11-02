@@ -418,3 +418,74 @@ run_update_root check --source-version 7.0.0-29.29 \
 	status) == current ]]
 
 printf 'variant Release tests passed\n'
+
+# Latest project Release: the Ubuntu HWE candidate (7.0.0-31.31) was never
+# published, so check and install must both target the newest project Release
+# from the root-side listing instead of requiring the HWE version.
+target_list=
+target_root=
+run_update_target() {
+	env \
+		PATH="$mock_bin:$PATH" \
+		S4LOCKDOWN_TEST_ROOT="$target_root" \
+		S4LOCKDOWN_TEST_IGNORE_SYSTEM_PACKAGES=1 \
+		S4LOCKDOWN_TEST_APT_VERSION=7.0.0-31.31 \
+		S4LOCKDOWN_TEST_PACKAGE_TOOL="$package_tool" \
+		S4LOCKDOWN_TEST_PACKAGE_LOG="$temp_dir/package.log" \
+		S4LOCKDOWN_TEST_RELEASE_LIST="$target_list" \
+		"$mock_repo/scripts/update-local.py" "$@"
+}
+new_target_root() {
+	target_root=$(mktemp -d "$temp_dir/target-root.XXXXXXXX")
+	mkdir -p "$target_root/etc"
+	printf 'POLICY=automatic-install\n' > "$target_root/etc/s4lockdown-update.conf"
+}
+target_list="$temp_dir/releases.json"
+printf '%s\n' '[
+{"tag_name":"ubuntu-7.0.0-29.29","draft":false,"prerelease":false,"published_at":"2026-08-05T11:22:04Z"},
+{"tag_name":"ubuntu-7.0.0-30.30","draft":false,"prerelease":false,"published_at":"2026-08-20T18:00:42Z"},
+{"tag_name":"ubuntu-7.0.0-99.99","draft":true,"prerelease":false,"published_at":"2026-09-01T00:00:00Z"},
+{"tag_name":"manager-v1.0.1","draft":false,"prerelease":false,"published_at":"2026-10-30T10:02:34Z"}
+]' > "$target_list"
+
+new_target_root
+run_update_target check --source-dir "$release_30" >/dev/null
+target_check="$target_root/var/cache/s4lockdown-update/check-state.json"
+[[ $(json_value "$target_check" status) == verified ]]
+[[ $(json_value "$target_check" release_tag) == ubuntu-7.0.0-30.30 ]]
+[[ $(json_value "$target_check" candidate_source_version) == 7.0.0-30.30 ]]
+run_update_target install >/dev/null
+[[ $(json_value "$target_root/var/lib/s4lockdown-update/state.json" \
+	installed_source_version) == 7.0.0-30.30 ]]
+
+# Without a usable listing the strict HWE match stays in force: the staged
+# 30.30 Release must be rejected because the candidate is 31.31.
+new_target_root
+saved_list=$target_list
+target_list=
+if run_update_target check --source-dir "$release_30" >/dev/null 2>&1; then
+	printf 'Strict HWE match was bypassed without a Release listing.\n' >&2
+	exit 1
+fi
+[[ $(json_value "$target_root/var/cache/s4lockdown-update/check-state.json" \
+	status) != verified ]]
+
+# A malformed listing also fails closed to the strict HWE match.
+target_list="$temp_dir/bad-releases.json"
+printf 'not json\n' > "$target_list"
+new_target_root
+if run_update_target check --source-dir "$release_30" >/dev/null 2>&1; then
+	printf 'Malformed Release listing bypassed the strict HWE match.\n' >&2
+	exit 1
+fi
+target_list=$saved_list
+
+# The newest Release must not be older than the installed project kernel.
+new_target_root
+run_update_target check --source-dir "$release_30" \
+	--installed-source-version 7.0.0-31.31 >/dev/null
+[[ $(json_value "$target_root/var/cache/s4lockdown-update/check-state.json" \
+	status) == downgrade-refused ]]
+[[ ! -d $target_root/var/cache/s4lockdown-update/staged ]]
+
+printf 'latest project Release tests passed\n'

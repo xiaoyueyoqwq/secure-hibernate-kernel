@@ -5,16 +5,19 @@
 The updater has two systemd stages and one scheduled timer:
 
 - `s4lockdown-update-check.service` runs as the dedicated, non-login
-  `s4lockdown-update` user. It resolves the current Ubuntu HWE source version,
-  downloads the matching GitHub Release into a temporary cache directory,
+  `s4lockdown-update` user. It selects the newest published project Release
+  from the GitHub Release list (falling back to the current Ubuntu HWE source
+  version when the list is unavailable), downloads that GitHub Release into a
+  temporary cache directory,
   verifies the signed Manifest or the single pinned legacy Release snapshot,
   and performs package-level EFI, module, and headers validation.
 - `s4lockdown-update.service` runs as root after a successful check. It resolves
-  the current HWE candidate independently, copies every staged asset into a new
-  root-owned file, removes the download-user copy, and repeats the complete
-  metadata, hash, and package validation. It accepts only an exact
-  source-version and Release-tag match before following the configured
-  installation policy.
+  the target Release independently from the same Release list (with the same
+  HWE fallback), copies every staged asset into a new root-owned file, removes
+  the download-user copy, and repeats the complete metadata, hash, and package
+  validation. It accepts only an exact source-version and Release-tag match
+  against that selection, and refuses a Release older than an installed project
+  kernel, before following the configured installation policy.
 - `s4lockdown-update.timer` starts the sequence 15 minutes after boot and at
   10:00, 15:00, and 20:00 local time. It catches up after missed calendar runs.
   The root stage runs only on AC power.

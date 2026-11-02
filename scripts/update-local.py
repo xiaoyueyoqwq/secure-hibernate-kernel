@@ -406,44 +406,45 @@ def resolve_version(resolver: Path, requested: str) -> dict[str, str]:
     return values
 
 
-def get_latest_project_kernel_release(
-    repository: str,
-    testing: bool = False,
-) -> tuple[str, str] | None:
-    """Query GitHub API for the latest project kernel Release.
+PROJECT_RELEASE_TAG = re.compile(
+    r"^ubuntu-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+)(?:-[a-z0-9]+)*$"
+)
 
-    Returns (tag, source_version) if a project kernel Release exists,
-    or None if no project kernel Releases are found or on API failure.
+
+def latest_project_release(
+    repository: str,
+    testing: bool,
+) -> tuple[str, str] | None:
+    """Return (tag, source_version) of the newest published kernel Release.
+
+    Candidates are ranked by Ubuntu source version, then by publication time,
+    so the result never depends on API list order. Any listing failure or an
+    empty list returns None and the caller keeps the strict HWE match. The tag
+    only selects what gets downloaded; the signed Manifest and package
+    signatures still decide whether it is trusted.
     """
     if testing:
-        fixture = os.environ.get("S4LOCKDOWN_TEST_LATEST_KERNEL_RELEASE")
-        if fixture:
-            parts = fixture.split(",", 1)
-            if len(parts) == 2:
-                return (parts[0], parts[1])
-        return None
-
-    try:
-        status, content = download_json(
-            f"https://api.github.com/repos/{repository}/releases?per_page=30"
-        )
-    except UpdateError:
-        # Network or API failure - fall back to Ubuntu HWE version
-        return None
-
-    if status != 200:
-        return None
-
+        fixture = os.environ.get("S4LOCKDOWN_TEST_RELEASE_LIST")
+        if not fixture:
+            return None
+        content = Path(fixture).read_bytes()
+    else:
+        try:
+            status, content = download_json(
+                f"https://api.github.com/repos/{repository}/releases?per_page=100"
+            )
+        except UpdateError:
+            return None
+        if status != 200:
+            return None
     try:
         document = json.loads(content)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
-
     if not isinstance(document, list):
         return None
 
-    # Find the latest project kernel Release (tag starting with "ubuntu-")
-    project_releases: list[tuple[str, str]] = []
+    best: tuple[str, str, str] | None = None
     for entry in document:
         if (
             not isinstance(entry, dict)
@@ -452,24 +453,39 @@ def get_latest_project_kernel_release(
         ):
             continue
         tag = entry.get("tag_name")
-        if not isinstance(tag, str) or not tag.startswith("ubuntu-"):
+        match = PROJECT_RELEASE_TAG.fullmatch(tag) if isinstance(tag, str) else None
+        if match is None or not SOURCE_VERSION.fullmatch(match.group(1)):
             continue
+        source_version = match.group(1)
+        published = entry.get("published_at")
+        published = published if isinstance(published, str) else ""
+        if best is None:
+            best = (tag, source_version, published)
+            continue
+        if version_compare(source_version, "gt", best[1]) or (
+            version_compare(source_version, "eq", best[1])
+            and (published, tag) > (best[2], best[0])
+        ):
+            best = (tag, source_version, published)
+    return None if best is None else (best[0], best[1])
 
-        # Extract source version from tag: ubuntu-7.0.0-34.34-vmstat-elan100k -> 7.0.0-34.34
-        # Tag format: ubuntu-{source_version}-{patch_tags}
-        tag_without_prefix = tag.removeprefix("ubuntu-")
-        # Source version matches x.y.z-nn.nn pattern at the start
-        match = re.match(r'^([0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+)', tag_without_prefix)
-        if match:
-            source_version = match.group(1)
-            if SOURCE_VERSION.fullmatch(source_version):
-                project_releases.append((tag, source_version))
 
-    if not project_releases:
-        return None
+def resolve_target(
+    resolver: Path,
+    requested: str,
+    repository: str,
+    testing: bool,
+) -> dict[str, str]:
+    """Resolve the Release to install: newest project Release for "auto".
 
-    # Return the first (most recent) project kernel Release
-    return project_releases[0]
+    An explicit source version, or a failed/empty Release listing, uses the
+    Ubuntu HWE resolver and therefore the exact-match rule.
+    """
+    if requested == "auto":
+        latest = latest_project_release(repository, testing)
+        if latest is not None:
+            return {"marker_tag": latest[0], "source_package_version": latest[1]}
+    return resolve_version(resolver, requested)
 
 
 @contextmanager
@@ -1120,23 +1136,14 @@ def check_command(arguments: argparse.Namespace) -> int:
             )
             check_manager_release(cache_dir, testing)
 
-            # Try to get the latest project kernel Release first
             repository = os.environ.get(
                 "S4LOCKDOWN_GITHUB_REPOSITORY", PROJECT_REPOSITORY
             )
-            latest_project_release = get_latest_project_kernel_release(repository, testing)
-
-            if latest_project_release and arguments.source_version == "auto":
-                # Use the latest project Release instead of Ubuntu HWE version
-                tag, candidate = latest_project_release
-                # Still need to resolve for other metadata like local_version
-                resolved = resolve_version(resolver, candidate)
-                resolved["marker_tag"] = tag  # Override with the actual project Release tag
-            else:
-                # Fall back to Ubuntu HWE version resolution
-                resolved = resolve_version(resolver, arguments.source_version)
-                candidate = resolved["source_package_version"]
-                tag = resolved["marker_tag"]
+            resolved = resolve_target(
+                resolver, arguments.source_version, repository, testing
+            )
+            candidate = resolved["source_package_version"]
+            tag = resolved["marker_tag"]
             partial = cache_dir / f".partial.{tag}"
             for entry in cache_dir.iterdir():
                 if entry.name.startswith(".partial.") and entry != partial:
@@ -1556,7 +1563,12 @@ def install_command(arguments: argparse.Namespace) -> int:
                 if arguments.force:
                     fail("No verified Release is staged for installation")
                 return 0
-            expected = resolve_version(resolver, "auto")
+            expected = resolve_target(
+                resolver,
+                "auto",
+                os.environ.get("S4LOCKDOWN_GITHUB_REPOSITORY", PROJECT_REPOSITORY),
+                testing,
+            )
             def install_phase(phase: str) -> None:
                 mapped_phase = "verifying-release" if phase == "verifying-manifest" else (
                     "verifying-packages"

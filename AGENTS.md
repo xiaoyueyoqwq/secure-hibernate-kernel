@@ -123,9 +123,15 @@
   processing, copy every staged asset into a newly created root-owned inode,
   remove the unprivileged source, and repeat both Manifest and package signature
   verification. Changing ownership does not revoke an already open descriptor.
-- The root updater stage must independently resolve the current Ubuntu HWE
-  candidate and require an exact source-version and Release-tag match. A signed
-  Manifest proves authenticity but does not by itself authorize rollout order.
+- Both the unprivileged check and the root updater stage must independently
+  select the target Release as the newest published `ubuntu-*` project Release
+  from the GitHub Release list, ranked by source version and then publication
+  time, never from list order or from unprivileged check-state. The root stage
+  requires an exact source-version and Release-tag match against its own
+  selection and still refuses any Release older than an installed project
+  kernel. When the list is unavailable, malformed, or empty, fall back to the
+  strict Ubuntu HWE candidate match. A signed Manifest proves authenticity but
+  does not by itself authorize rollout order.
 - When the installed source version already equals the candidate, the updater
   checks the same-source patch-variant Release (the resolved marker tag, e.g.
   `ubuntu-7.0.0-29.29-vmstat`) and offers it when its kernel release is newer

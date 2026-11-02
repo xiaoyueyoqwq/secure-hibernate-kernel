@@ -146,6 +146,9 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
   bool installationComplete = false;
   bool packagesInstalled = false;
   InstallationInspection installationInspection = InstallationInspection.idle;
+  // The install action itself failed, as opposed to the inspection. Rechecking
+  // cannot fix it, so the step offers a retry of the fixed install action.
+  bool installFailed = false;
   bool bootVerified = false;
   TpmInspection tpmInspection = TpmInspection.unchecked;
   bool recoveryVerified = false;
@@ -553,9 +556,10 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
       return complete;
     } on Object catch (error) {
       if (mounted) {
-        setState(
-          () => installationInspection = InstallationInspection.error,
-        );
+        setState(() {
+          installationInspection = InstallationInspection.error;
+          installFailed = false;
+        });
       }
       publishWizardError(error);
       return false;
@@ -624,6 +628,7 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
 
   Future<void> handleAction() async {
     final manager = context.manager;
+    final t = context.t;
     final step = manager.currentWizardStep;
     switch (step) {
       case 0:
@@ -697,10 +702,41 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
               return;
             }
             setState(() => processing = true);
-            await manager.restartForSetup(
+            bool timeoutReached = false;
+            Timer(const Duration(seconds: 3), () {
+              if (!mounted || !processing) return;
+              timeoutReached = true;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(t.text('wizard.restartWaiting')),
+                  duration: const Duration(minutes: 5),
+                ),
+              );
+            });
+            final result = await manager.restartForSetup(
               SetupCheckpoint.awaitingMokEnrollment,
             );
             if (!mounted) return;
+            if (timeoutReached) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            }
+            if (result.status == SystemActionStatus.error) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                      '${t.text('wizard.restartFailed')}: ${result.error}'),
+                  duration: const Duration(seconds: 10),
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                ),
+              );
+            } else if (result.status == SystemActionStatus.cancelled) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(t.text('wizard.restartCancelled')),
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
             setState(() {
               processing = false;
               restartConfirmation = false;
@@ -770,7 +806,8 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
               installationInspection == InstallationInspection.checking) {
             return;
           }
-          if (installationInspection == InstallationInspection.error) {
+          if (installationInspection == InstallationInspection.error &&
+              !installFailed) {
             await inspectInstallationState();
             return;
           }
@@ -780,6 +817,7 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
           }
           setState(() {
             processing = true;
+            installFailed = false;
             installProgress = const InstallProgress.idle();
             installActionProgressObserved = false;
           });
@@ -803,11 +841,15 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
               );
               selectStep(5);
             }
-          } else if (result.status == ManagerActionStatus.error) {
-            installationInspection = InstallationInspection.error;
           }
           if (!mounted) return;
-          setState(() => processing = false);
+          setState(() {
+            if (result.status == ManagerActionStatus.error) {
+              installationInspection = InstallationInspection.error;
+              installFailed = true;
+            }
+            processing = false;
+          });
           return;
         }
         if (!packagesInstalled) {
@@ -839,10 +881,41 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
             return;
           }
           setState(() => processing = true);
-          await manager.restartForSetup(
+          bool timeoutReached = false;
+          Timer(const Duration(seconds: 3), () {
+            if (!mounted || !processing) return;
+            timeoutReached = true;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(t.text('wizard.restartWaiting')),
+                duration: const Duration(minutes: 5),
+              ),
+            );
+          });
+          final result = await manager.restartForSetup(
             SetupCheckpoint.awaitingProjectKernelBoot,
           );
           if (!mounted) return;
+          if (timeoutReached) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          }
+          if (result.status == SystemActionStatus.error) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content:
+                    Text('${t.text('wizard.restartFailed')}: ${result.error}'),
+                duration: const Duration(seconds: 10),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          } else if (result.status == SystemActionStatus.cancelled) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(t.text('wizard.restartCancelled')),
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
           setState(() {
             processing = false;
             restartConfirmation = false;
@@ -1019,7 +1092,9 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
           InstallationInspection.idle ||
           InstallationInspection.checking =>
             t.text('common.checkingStatus'),
-          InstallationInspection.error => t.text('common.recheck'),
+          InstallationInspection.error => installFailed
+              ? t.text('common.retryInstallation')
+              : t.text('common.recheck'),
           InstallationInspection.complete => t.text('common.continue'),
           InstallationInspection.incomplete =>
             t.text('common.startInstallation'),

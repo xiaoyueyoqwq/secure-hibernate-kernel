@@ -267,16 +267,26 @@ def recovery_progress(check_state: dict[str, Any]) -> tuple[str, int] | None:
     return None
 
 
-def recover_verified_release() -> None:
-    # Clear any stale error state before starting recovery
-    check_state_path = CHECK_STATE_PATH
-    if check_state_path.exists():
-        check_state = read_json(check_state_path)
-        status = check_state.get("status")
-        # If there's a terminal error state, clear it to allow fresh retry
-        if status in {"release-unavailable", "check-failed", "downgrade-refused"}:
-            check_state_path.unlink()
+def check_unit_is_live() -> bool:
+    # A running Type=oneshot unit reports "activating", for which
+    # `systemctl is-active` exits 3 just like a stopped unit.
+    result = run(
+        [
+            EXECUTABLES["systemctl"],
+            "show",
+            "--property=ActiveState",
+            "--value",
+            CHECK_UNIT,
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise HelperError("Could not inspect the updater download service")
+    state = result.stdout.decode("utf-8", "replace").strip()
+    return state in {"active", "activating", "reloading"}
 
+
+def recover_verified_release() -> None:
     baseline = state_file_identity(CHECK_STATE_PATH)
     run([EXECUTABLES["systemctl"], "reset-failed", CHECK_UNIT], check=False)
     run([EXECUTABLES["systemctl"], "start", "--no-block", CHECK_UNIT])
@@ -302,17 +312,9 @@ def recover_verified_release() -> None:
                         "Updater reported a verified Release but did not retain its staged files"
                     )
                 return
-            if status == "release-unavailable" and observed_new_state:
-                # If release is unavailable, it might be due to stale state
-                # Provide a more helpful error message
-                detail = (
-                    "No matching project kernel Release found. "
-                    "The system may be running a newer Ubuntu kernel than the latest "
-                    "available project Release. Check the Releases page for available versions."
-                )
-                raise HelperError(detail)
             if status in {
                 "check-failed",
+                "release-unavailable",
                 "downgrade-refused",
                 "current",
                 "paused",
@@ -322,20 +324,14 @@ def recover_verified_release() -> None:
                     detail = f"Updater check ended with status: {status}"
                 raise HelperError(detail[:4096])
 
-        active = run(
-            [EXECUTABLES["systemctl"], "is-active", "--quiet", CHECK_UNIT],
-            check=False,
-        )
-        if active.returncode not in {0, 3}:
-            raise HelperError("Could not inspect the updater download service")
-        if active.returncode == 3:
+        if check_unit_is_live():
+            inactive_polls = 0
+        else:
             inactive_polls += 1
             if inactive_polls >= 20:
                 raise HelperError(
                     "Updater download service stopped without a verified Release"
                 )
-        else:
-            inactive_polls = 0
         time.sleep(0.5)
 
     run([EXECUTABLES["systemctl"], "stop", CHECK_UNIT], check=False)
