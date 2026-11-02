@@ -1045,7 +1045,8 @@ class ManagerController extends ChangeNotifier {
     ManagerActionData data, {
     required bool announceStale,
   }) {
-    if (data.alreadyConfigured == null && data.tokens.isEmpty) {
+    if ((data.alreadyConfigured == null || data.alreadyConfigured == false) &&
+        data.tokens.isEmpty) {
       if (!luks || !tpmConfigured) {
         tpmHealth = TpmHealth.notApplicable;
         notifyListeners();

@@ -343,7 +343,7 @@
     "description": "Review manager events and prepare a diagnostic report for troubleshooting.",
     "diagnosticReport": "Diagnostic Report",
     "supportReport": "Support Report",
-    "reportDescription": "Exports the fixed system snapshot and native diagnostics; private signing keys are never included.",
+    "reportDescription": "Exports the fixed system snapshot and native diagnostics. Redact sensitive information before sharing.",
     "eventLog": "Application Event Log",
     "noEvents": "No application events recorded."
   }

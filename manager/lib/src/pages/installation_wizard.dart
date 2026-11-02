@@ -702,39 +702,31 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
               return;
             }
             setState(() => processing = true);
-            bool timeoutReached = false;
-            Timer(const Duration(seconds: 3), () {
+            final timeoutTimer = Timer(const Duration(seconds: 3), () {
               if (!mounted || !processing) return;
-              timeoutReached = true;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(t.text('wizard.restartWaiting')),
-                  duration: const Duration(minutes: 5),
-                ),
+              manager.addNotice(
+                type: ManagerNoticeType.info,
+                title: t.text('wizard.restartWaiting'),
+                duration: const Duration(minutes: 5),
               );
             });
             final result = await manager.restartForSetup(
               SetupCheckpoint.awaitingMokEnrollment,
             );
+            timeoutTimer.cancel();
             if (!mounted) return;
-            if (timeoutReached) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            }
             if (result.status == SystemActionStatus.error) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                      '${t.text('wizard.restartFailed')}: ${result.error}'),
-                  duration: const Duration(seconds: 10),
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                ),
+              manager.addNotice(
+                type: ManagerNoticeType.error,
+                title: t.text('wizard.restartFailed'),
+                description: result.error,
+                duration: const Duration(seconds: 10),
               );
             } else if (result.status == SystemActionStatus.cancelled) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(t.text('wizard.restartCancelled')),
-                  duration: const Duration(seconds: 5),
-                ),
+              manager.addNotice(
+                type: ManagerNoticeType.warning,
+                title: t.text('wizard.restartCancelled'),
+                duration: const Duration(seconds: 5),
               );
             }
             setState(() {
@@ -881,39 +873,31 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
             return;
           }
           setState(() => processing = true);
-          bool timeoutReached = false;
-          Timer(const Duration(seconds: 3), () {
+          final timeoutTimer = Timer(const Duration(seconds: 3), () {
             if (!mounted || !processing) return;
-            timeoutReached = true;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(t.text('wizard.restartWaiting')),
-                duration: const Duration(minutes: 5),
-              ),
+            manager.addNotice(
+              type: ManagerNoticeType.info,
+              title: t.text('wizard.restartWaiting'),
+              duration: const Duration(minutes: 5),
             );
           });
           final result = await manager.restartForSetup(
             SetupCheckpoint.awaitingProjectKernelBoot,
           );
+          timeoutTimer.cancel();
           if (!mounted) return;
-          if (timeoutReached) {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          }
           if (result.status == SystemActionStatus.error) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content:
-                    Text('${t.text('wizard.restartFailed')}: ${result.error}'),
-                duration: const Duration(seconds: 10),
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
+            manager.addNotice(
+              type: ManagerNoticeType.error,
+              title: t.text('wizard.restartFailed'),
+              description: result.error,
+              duration: const Duration(seconds: 10),
             );
           } else if (result.status == SystemActionStatus.cancelled) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(t.text('wizard.restartCancelled')),
-                duration: const Duration(seconds: 5),
-              ),
+            manager.addNotice(
+              type: ManagerNoticeType.warning,
+              title: t.text('wizard.restartCancelled'),
+              duration: const Duration(seconds: 5),
             );
           }
           setState(() {

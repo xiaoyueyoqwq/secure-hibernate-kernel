@@ -343,7 +343,7 @@
     "description": "查看管理器事件，並產生用於疑難排解的診斷報告。",
     "diagnosticReport": "診斷報告",
     "supportReport": "支援報告",
-    "reportDescription": "匯出固定的系統快照和原生診斷資訊；絕不會包含私有簽署金鑰。",
+    "reportDescription": "匯出固定的系統快照和原生診斷資訊。請在分享日誌前作必要的去敏。",
     "eventLog": "應用程式事件日誌",
     "noEvents": "尚未記錄應用程式事件。"
   }
