@@ -8,6 +8,7 @@ import fcntl
 from functools import cmp_to_key
 import json
 import os
+import pwd
 import re
 import secrets
 import stat
@@ -1520,6 +1521,28 @@ def action_repair_swap() -> dict[str, Any]:
     }
 
 
+def set_session_power_button(action: str) -> None:
+    # gsd-power handles the power key inside a GNOME session through
+    # gsettings, independently of the logind drop-in. Flip it for the
+    # invoking desktop user when their session bus is reachable; a
+    # missing session must not fail the whole toggle.
+    uid = os.environ.get("PKEXEC_UID")
+    if not uid:
+        return
+    try:
+        user = pwd.getpwuid(int(uid)).pw_name
+    except (KeyError, ValueError):
+        return
+    if not Path(f"/run/user/{uid}/bus").exists():
+        return
+    run([
+        Path("/usr/sbin/runuser"), "-u", user, "--",
+        "env", f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus",
+        "gsettings", "set", "org.gnome.settings-daemon.plugins.power",
+        "power-button-action", action,
+    ], check=False)
+
+
 def action_set_safe_mode(state: str) -> dict[str, Any]:
     if state not in ("enabled", "disabled"):
         raise HelperError(f"Unsupported safe mode state: {state}")
@@ -1528,6 +1551,7 @@ def action_set_safe_mode(state: str) -> dict[str, Any]:
     else:
         SAFE_MODE_UNIT_PATH.unlink(missing_ok=True)
     run([EXECUTABLES["systemctl"], "try-reload-or-restart", "systemd-logind"])
+    set_session_power_button("suspend" if state == "enabled" else "hibernate")
     return {"safeMode": state}
 
 
