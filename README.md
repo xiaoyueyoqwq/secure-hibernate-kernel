@@ -12,6 +12,11 @@ image and modules with a dedicated project MOK, and publishes an authenticated
 Release. Official Ubuntu kernels and the HWE meta-package remain installed as
 independent recovery paths.
 
+> [!IMPORTANT]
+> Machines with less than 12 GiB of physical RAM cannot install or use this
+> project: the hibernation image cannot be built reliably below that floor.
+> The Manager blocks installation on undersized systems.
+
 ## Downloads
 
 - **[📦 Latest Manager](https://github.com/xiaoyueyoqwq/secure-hibernate-kernel/releases?q=manager-v&expanded=true)** — Desktop application for installation and updates

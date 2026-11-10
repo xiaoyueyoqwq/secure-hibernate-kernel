@@ -78,7 +78,10 @@
     "toggleMaximizeWindow": "最大化或还原",
     "closeWindow": "关闭",
     "restart": "重启",
-    "confirmRestart": "确认重启？"
+    "confirmRestart": "确认重启？",
+    "insufficientMemory": "内存不足",
+    "unsupported": "不支持",
+    "supported": "支持"
   },
   "overview": {
     "title": "概览",
@@ -234,10 +237,10 @@
       "lockdownHelp": "原因：Kernel Lockdown 可阻止特权软件通过底层内核接口绕过 Secure Boot 信任链。处理方式：启用 Secure Boot，然后启动支持 Lockdown 的 Ubuntu 官方内核或项目签名内核并重新检查。",
       "luksHelp": "原因：休眠会把会话内存、应用数据以及可能存在的密钥材料写入 Swap；没有 LUKS 时，离线访问者可以读取休眠镜像。处理方式：使用启用了磁盘加密的 Ubuntu 安装，或手动迁移根分区；不加密仍可继续安装。",
       "hibernationSpaceHelp": "原因：磁盘休眠需要不小于物理内存的磁盘 Swap。处理方式：点击“一键修复”，安全创建或替换 /swap.img。",
-      "reclaimPath": "内存回收路径",
-      "reclaimPathHelp": "原因：内存紧张时内核需要把页面换出到磁盘 Swap 才能分配休眠镜像；被过大的 zram 吸收的页面不会真正释放物理内存。处理方式：将 zram 限制在物理内存一半以下，或让磁盘 Swap 拥有更高优先级。",
       "officialFallbackHelp": "原因：Ubuntu 官方内核提供独立的故障恢复启动路径。处理方式：安装 Ubuntu HWE 内核元包后重新检查。",
-      "tpmUnavailableWithoutLuks": "根分区未使用 LUKS，因此 TPM 自动解锁不适用。"
+      "tpmUnavailableWithoutLuks": "根分区未使用 LUKS，因此 TPM 自动解锁不适用。",
+      "physicalMemory": "物理内存大小",
+      "physicalMemoryHelp": "休眠需要至少 12 GiB 物理内存才能可靠地构建镜像。"
     }
   },
   "kernels": {
@@ -304,7 +307,11 @@
     "bindTpm": "绑定 TPM",
     "rebindTpm": "重新绑定 TPM",
     "note": "注意：",
-    "recoveryNote": "请始终保留 LUKS 恢复密码备份。更换主板或 Secure Boot 状态发生明显变化后，TPM 将不会释放密钥。"
+    "recoveryNote": "请始终保留 LUKS 恢复密码备份。更换主板或 Secure Boot 状态发生明显变化后，TPM 将不会释放密钥。",
+    "hibernation": "休眠",
+    "safeMode": "安全模式",
+    "safeModeHelp": "开启后所有休眠触发（如合盖或电源键）默认回退至 S3 睡眠，关闭安全模式后恢复 Hibernate。",
+    "safeModeSuggested": "建议在本机启用：物理内存低于休眠所需下限。"
   },
   "settings": {
     "title": "偏好设置",

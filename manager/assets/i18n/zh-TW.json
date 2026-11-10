@@ -78,7 +78,10 @@
     "toggleMaximizeWindow": "最大化或還原",
     "closeWindow": "關閉",
     "restart": "重新啟動",
-    "confirmRestart": "確認重新啟動？"
+    "confirmRestart": "確認重新啟動？",
+    "insufficientMemory": "記憶體不足",
+    "unsupported": "不支援",
+    "supported": "支援"
   },
   "overview": {
     "title": "概覽",
@@ -234,10 +237,10 @@
       "lockdownHelp": "原因：Kernel Lockdown 可防止特權軟體透過底層核心介面繞過 Secure Boot 信任鏈。處理方式：啟用 Secure Boot，然後啟動支援 Lockdown 的 Ubuntu 官方核心或專案簽署核心並重新檢查。",
       "luksHelp": "原因：休眠會把工作階段記憶體、應用程式資料以及可能存在的金鑰材料寫入 Swap；沒有 LUKS 時，離線存取者可以讀取休眠映像。處理方式：使用已啟用磁碟加密的 Ubuntu 安裝，或手動遷移根分割區；未加密仍可繼續安裝。",
       "hibernationSpaceHelp": "原因：磁碟休眠需要不小於實體記憶體的磁碟 Swap。處理方式：點選「一鍵修復」，安全建立或替換 /swap.img。",
-      "reclaimPath": "記憶體回收路徑",
-      "reclaimPathHelp": "原因：記憶體緊張時核心需要把頁面換出到磁碟 Swap 才能分配休眠映像；被過大的 zram 吸收的頁面不會真正釋放實體記憶體。處理方式：將 zram 限制在實體記憶體一半以下，或讓磁碟 Swap 擁有更高優先級。",
       "officialFallbackHelp": "原因：Ubuntu 官方核心提供獨立的故障復原啟動路徑。處理方式：安裝 Ubuntu HWE 核心中繼套件後重新檢查。",
-      "tpmUnavailableWithoutLuks": "根分割區未使用 LUKS，因此 TPM 自動解鎖不適用。"
+      "tpmUnavailableWithoutLuks": "根分割區未使用 LUKS，因此 TPM 自動解鎖不適用。",
+      "physicalMemory": "物理記憶體大小",
+      "physicalMemoryHelp": "休眠需要至少 12 GiB 物理記憶體才能可靠地構建映像。"
     }
   },
   "kernels": {
@@ -304,7 +307,11 @@
     "bindTpm": "綁定 TPM",
     "rebindTpm": "重新綁定 TPM",
     "note": "注意：",
-    "recoveryNote": "請始終保留 LUKS 復原密碼備份。更換主機板或 Secure Boot 狀態發生明顯變化後，TPM 將不會釋放金鑰。"
+    "recoveryNote": "請始終保留 LUKS 復原密碼備份。更換主機板或 Secure Boot 狀態發生明顯變化後，TPM 將不會釋放金鑰。",
+    "hibernation": "休眠",
+    "safeMode": "安全模式",
+    "safeModeHelp": "開啟後所有休眠觸發（如闔蓋或電源鍵）預設回退至 S3 睡眠，關閉安全模式後恢復 Hibernate。",
+    "safeModeSuggested": "建議在本機啟用：物理記憶體低於休眠所需下限。"
   },
   "settings": {
     "title": "偏好設定",

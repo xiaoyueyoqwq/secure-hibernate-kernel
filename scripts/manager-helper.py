@@ -38,6 +38,17 @@ SYSTEM_CONFIG_TOOL = INSTALL_ROOT / "scripts/install-system-config.sh"
 CHECK_UNIT = "s4lockdown-update-manager-check.service"
 CONFIG_PATH = Path("/etc/s4lockdown-update.conf")
 GRUB_PROJECT_CONFIG_PATH = Path("/etc/default/grub.d/99-s4lockdown.cfg")
+SAFE_MODE_UNIT_PATH = Path(
+    "/etc/systemd/logind.conf.d/95-s4lockdown-safe-mode.conf"
+)
+SAFE_MODE_UNIT_CONTENT = b"""# Safe mode: downgrade every hibernate trigger to suspend-to-RAM on
+# machines whose physical memory cannot reliably build an image.
+[Login]
+HandleLidSwitch=suspend
+HandleLidSwitchExternalPower=suspend
+HandleLidSwitchDocked=suspend
+HandlePowerKey=suspend
+"""
 FSTAB_PATH = Path("/etc/fstab")
 ROOT_STATE_PATH = Path("/var/lib/s4lockdown-update/state.json")
 CHECK_STATE_PATH = Path("/var/cache/s4lockdown-update/check-state.json")
@@ -1509,6 +1520,17 @@ def action_repair_swap() -> dict[str, Any]:
     }
 
 
+def action_set_safe_mode(state: str) -> dict[str, Any]:
+    if state not in ("enabled", "disabled"):
+        raise HelperError(f"Unsupported safe mode state: {state}")
+    if state == "enabled":
+        write_atomic(SAFE_MODE_UNIT_PATH, SAFE_MODE_UNIT_CONTENT, 0o644)
+    else:
+        SAFE_MODE_UNIT_PATH.unlink(missing_ok=True)
+    run([EXECUTABLES["systemctl"], "try-reload-or-restart", "systemd-logind"])
+    return {"safeMode": state}
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="action", required=True)
@@ -1527,6 +1549,8 @@ def parse_arguments() -> argparse.Namespace:
     retention.add_argument("history", type=int, choices=sorted(PROJECT_KERNEL_HISTORY_VALUES))
     remove = subparsers.add_parser("remove-kernel")
     remove.add_argument("release")
+    safe_mode = subparsers.add_parser("set-safe-mode")
+    safe_mode.add_argument("state", choices=("enabled", "disabled"))
     return parser.parse_args()
 
 
@@ -1549,6 +1573,8 @@ def dispatch(arguments: argparse.Namespace) -> dict[str, Any]:
         return action_set_kernel_retention(arguments.history)
     if arguments.action == "remove-kernel":
         return action_remove_kernel(arguments.release)
+    if arguments.action == "set-safe-mode":
+        return action_set_safe_mode(arguments.state)
     if arguments.action in {"enroll-tpm", "verify-recovery"}:
         password = read_password_stdin() if arguments.password_stdin else None
         try:

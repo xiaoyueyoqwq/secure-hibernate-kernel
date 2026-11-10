@@ -585,6 +585,18 @@ class AppSidebar extends StatelessWidget {
           icon: LucideIcons.fileTerminal,
         ),
     ];
+    // Below the memory floor only kernel updates and the safe-mode
+    // switch remain reachable; other pages are hidden until the
+    // machine meets the physical memory requirement again.
+    final visibleItems = manager.native &&
+            manager.setupComplete &&
+            !manager.physicalMemorySupported
+        ? items
+            .where((item) =>
+                item.page == ManagerPage.kernels ||
+                item.page == ManagerPage.security)
+            .toList()
+        : items;
     return LayoutBuilder(
       builder: (context, constraints) {
         final expanded = MediaQuery.sizeOf(context).width >= 768;
@@ -632,10 +644,10 @@ class AppSidebar extends StatelessWidget {
                     expanded ? 12 : 6,
                     8,
                   ),
-                  itemCount: items.length,
+                  itemCount: visibleItems.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 2),
                   itemBuilder: (context, index) {
-                    final item = items[index];
+                    final item = visibleItems[index];
                     return SidebarItem(
                       label: item.label,
                       icon: item.icon,

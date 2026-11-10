@@ -112,7 +112,8 @@ class ManagerController extends ChangeNotifier {
       secureBoot = true;
       luks = true;
       hibernationCapacity = true;
-      hibernationReclaimPath = true;
+      physicalMemorySupported = true;
+      safeModeEnabled = false;
       grubConfigured = true;
       headersInstalled = true;
       snapshotLoaded = true;
@@ -179,7 +180,8 @@ class ManagerController extends ChangeNotifier {
   bool tpmConfigured = false;
   TpmHealth tpmHealth = TpmHealth.unchecked;
   bool hibernationCapacity = false;
-  bool hibernationReclaimPath = false;
+  bool physicalMemorySupported = false;
+  bool safeModeEnabled = false;
   bool grubConfigured = false;
   bool headersInstalled = false;
   bool snapshotLoaded = false;
@@ -379,6 +381,20 @@ class ManagerController extends ChangeNotifier {
     }
     final result = await runManagerAction(
       ManagerActionRequest(ManagerActionType.setPolicy, policy: value),
+    );
+    if (result.status == ManagerActionStatus.success) await refreshSnapshot();
+    return result;
+  }
+
+  Future<ManagerActionResult?> changeSafeMode(bool value) async {
+    if (backend == null) {
+      safeModeEnabled = value;
+      addLog('[System] Changed test-backend zram drain to $value');
+      notifyListeners();
+      return null;
+    }
+    final result = await runManagerAction(
+      ManagerActionRequest(ManagerActionType.setSafeMode, safeMode: value),
     );
     if (result.status == ManagerActionStatus.success) await refreshSnapshot();
     return result;
@@ -809,10 +825,15 @@ class ManagerController extends ChangeNotifier {
       tpmHealth = TpmHealth.unchecked;
     }
     hibernationCapacity = status.hibernatePartition;
-    hibernationReclaimPath = status.hibernateReclaimPath;
+    physicalMemorySupported = status.physicalMemorySupported;
+    safeModeEnabled = status.safeMode;
     grubConfigured = status.grubUpdated;
     headersInstalled = status.projectHeadersInstalled;
     kernels = List.unmodifiable(snapshot.kernels);
+    if (native && setupComplete && !physicalMemorySupported &&
+        activePage != ManagerPage.kernels) {
+      activePage = ManagerPage.security;
+    }
     updater = snapshot.updater;
     updatePolicy = snapshot.updater.policy;
     projectKernelHistory = snapshot.updater.projectKernelHistory;
@@ -1108,7 +1129,8 @@ class ManagerController extends ChangeNotifier {
           luks: luks,
           tpmConfigured: tpmConfigured,
           hibernatePartition: hibernationCapacity,
-          hibernateReclaimPath: hibernationReclaimPath,
+          physicalMemorySupported: physicalMemorySupported,
+          safeMode: safeModeEnabled,
           grubUpdated: grubConfigured,
           projectHeadersInstalled: headersInstalled,
         ),

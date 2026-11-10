@@ -623,6 +623,7 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
         !manager.secureBoot ||
         !manager.lockdown ||
         !manager.hibernationCapacity ||
+        !manager.physicalMemorySupported ||
         !manager.officialFallbackInstalled;
   }
 
@@ -1026,10 +1027,12 @@ class _InstallationWizardPageState extends State<InstallationWizardPage> {
               ? t.text('common.fixingSwap')
               : manager.native && !manager.hibernationCapacity
                   ? t.text('common.fixAutomatically')
-                  : manager.backendConnection == BackendConnection.error ||
-                          preflightFailed
-                      ? t.text('common.recheck')
-                      : t.text('common.continue'),
+                  : manager.native && !manager.physicalMemorySupported
+                      ? t.text('common.insufficientMemory')
+                      : manager.backendConnection == BackendConnection.error ||
+                              preflightFailed
+                          ? t.text('common.recheck')
+                          : t.text('common.continue'),
       2 => switch (downloadPhase) {
           DownloadPhase.idle => t.text('common.startDownload'),
           DownloadPhase.indexing => t.text('common.indexingRelease'),
@@ -1885,16 +1888,16 @@ class WizardStepDetails extends StatelessWidget {
                     : StatusKind.error,
           ),
           DetailRow(
-            label: d('reclaimPath'),
-            help: d('reclaimPathHelp'),
+            label: d('physicalMemory'),
+            help: d('physicalMemoryHelp'),
             value: !manager.snapshotLoaded
                 ? t.text('overview.unknown')
-                : manager.hibernationReclaimPath
+                : manager.physicalMemorySupported
                     ? d('ready')
                     : d('attention'),
             status: !manager.snapshotLoaded
                 ? StatusKind.pending
-                : manager.hibernationReclaimPath
+                : manager.physicalMemorySupported
                     ? StatusKind.ok
                     : StatusKind.warning,
           ),
@@ -2453,16 +2456,16 @@ String formatPreflightLog(ManagerController manager) {
       passed: manager.hibernationCapacity,
     ),
     (
-      id: 'zram_reclaim_path',
+      id: 'physical_memory',
       source: '/proc/meminfo + /proc/swaps',
       expected: 'zram sized below half of MemTotal or lower priority '
           'than disk-backed swap',
-      observed: manager.hibernationReclaimPath
+      observed: manager.physicalMemorySupported
           ? 'reclaim reaches disk-backed swap'
           : 'oversized high-priority zram may starve image allocation',
       failure: 'reclaim into zram does not free physical memory, so the '
           'hibernation image may fail to allocate',
-      passed: manager.hibernationReclaimPath,
+      passed: manager.physicalMemorySupported,
     ),
     (
       id: 'official_kernel_fallback',
@@ -2473,7 +2476,7 @@ String formatPreflightLog(ManagerController manager) {
       passed: official.isNotEmpty,
     ),
   ];
-  const warningChecks = {'luks_root', 'zram_reclaim_path'};
+  const warningChecks = {'luks_root'};
   final failed = checks
       .where((check) => !check.passed && !warningChecks.contains(check.id))
       .length;

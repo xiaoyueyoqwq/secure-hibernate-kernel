@@ -43,7 +43,8 @@ SystemSnapshot _completeSnapshot({
       luks: luks,
       tpmConfigured: tpmConfigured,
       hibernatePartition: true,
-      hibernateReclaimPath: true,
+      physicalMemorySupported: true,
+      safeMode: false,
       grubUpdated: true,
       projectHeadersInstalled: true,
     ),
@@ -1049,63 +1050,19 @@ void main() {
     expect(kernels.last.releaseDate, '2026-08-06');
   });
 
-  group('swap reclaim path', () {
-    test('accepts the absence of zram on small memory', () {
+  group('physical memory size', () {
+    test('counts memory blocks including reserved regions', () {
+      // 60 blocks of 128 MiB hold an 8 GiB machine above MemTotal.
       expect(
-        swapReclaimPathSafe(
-          memTotalKiB: 8 * 1024 * 1024,
-          zramSwapKiB: 0,
-          zramPriority: -32768,
-          diskSwapPriority: -1,
-        ),
-        isTrue,
+        physicalMemoryKiB(blocks: 60, blockSizeBytes: 0x8000000),
+        60 * 128 * 1024,
       );
     });
 
-    test('accepts any zram size on machines with enough memory', () {
+    test('a 96-block machine meets the 12 GiB floor', () {
       expect(
-        swapReclaimPathSafe(
-          memTotalKiB: 16 * 1024 * 1024,
-          zramSwapKiB: 16 * 1024 * 1024,
-          zramPriority: 1000,
-          diskSwapPriority: -1,
-        ),
-        isTrue,
-      );
-    });
-
-    test('accepts a small zram device on small memory', () {
-      expect(
-        swapReclaimPathSafe(
-          memTotalKiB: 8 * 1024 * 1024,
-          zramSwapKiB: 2 * 1024 * 1024,
-          zramPriority: 1000,
-          diskSwapPriority: -1,
-        ),
-        isTrue,
-      );
-    });
-
-    test('rejects an oversized zram that outranks disk swap', () {
-      expect(
-        swapReclaimPathSafe(
-          memTotalKiB: 8 * 1024 * 1024,
-          zramSwapKiB: 8 * 1024 * 1024,
-          zramPriority: 1000,
-          diskSwapPriority: -1,
-        ),
-        isFalse,
-      );
-    });
-
-    test('accepts an oversized zram when disk swap reclaims first', () {
-      expect(
-        swapReclaimPathSafe(
-          memTotalKiB: 8 * 1024 * 1024,
-          zramSwapKiB: 8 * 1024 * 1024,
-          zramPriority: -1,
-          diskSwapPriority: 100,
-        ),
+        physicalMemoryKiB(blocks: 96, blockSizeBytes: 0x8000000) >=
+            12 * 1024 * 1024,
         isTrue,
       );
     });

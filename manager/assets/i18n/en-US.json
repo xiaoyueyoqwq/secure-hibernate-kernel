@@ -78,7 +78,10 @@
     "toggleMaximizeWindow": "Maximize or restore",
     "closeWindow": "Close",
     "restart": "Restart",
-    "confirmRestart": "Confirm restart?"
+    "confirmRestart": "Confirm restart?",
+    "insufficientMemory": "Insufficient memory",
+    "unsupported": "Not supported",
+    "supported": "Supported"
   },
   "overview": {
     "title": "Overview",
@@ -234,10 +237,10 @@
       "lockdownHelp": "Why: Kernel Lockdown prevents privileged software from bypassing the Secure Boot trust chain through low-level kernel access. How: enable Secure Boot, then boot an official Ubuntu kernel or a project-signed kernel that supports Lockdown and check again.",
       "luksHelp": "Why: hibernation writes session memory, application data, and potentially key material to Swap. Without LUKS, an offline party can read that image. How: use an encrypted Ubuntu installation or migrate the root volume manually. Installation may continue without it.",
       "hibernationSpaceHelp": "Why: suspend-to-disk needs a disk-backed Swap file at least as large as physical memory. How: select Fix Automatically to create or replace /swap.img safely.",
-      "reclaimPath": "Memory reclaim path",
-      "reclaimPathHelp": "Why: under memory pressure the kernel frees RAM into swap to build the hibernation image; reclaim captured by an oversized zram device never leaves RAM. How: keep zram below half of physical memory or give disk-backed swap a higher priority.",
       "officialFallbackHelp": "Why: an official Ubuntu kernel provides an independent recovery boot path. How: install the Ubuntu HWE kernel meta-package before continuing.",
-      "tpmUnavailableWithoutLuks": "TPM automatic unlock is not applicable without a LUKS root volume."
+      "tpmUnavailableWithoutLuks": "TPM automatic unlock is not applicable without a LUKS root volume.",
+      "physicalMemory": "Physical memory",
+      "physicalMemoryHelp": "Hibernation requires at least 12 GiB of physical RAM to build the image reliably."
     }
   },
   "kernels": {
@@ -304,7 +307,11 @@
     "bindTpm": "Bind TPM",
     "rebindTpm": "Rebind TPM",
     "note": "Note:",
-    "recoveryNote": "Always keep a backup of your LUKS recovery password. If the motherboard is replaced or Secure Boot state changes significantly, the TPM will not release the key."
+    "recoveryNote": "Always keep a backup of your LUKS recovery password. If the motherboard is replaced or Secure Boot state changes significantly, the TPM will not release the key.",
+    "hibernation": "Hibernation",
+    "safeMode": "Safe mode",
+    "safeModeHelp": "When enabled, every hibernate trigger (lid switch, power key, and so on) falls back to S3 suspend until safe mode is turned off again.",
+    "safeModeSuggested": "Recommended on this machine: physical memory is below the hibernation floor."
   },
   "settings": {
     "title": "Preferences",

@@ -302,6 +302,8 @@ class NativeManagerBackend implements ManagerBackend {
       arguments.add(request.projectKernelHistory!.toString());
     } else if (request.action == ManagerActionType.removeKernel) {
       arguments.add(request.release!);
+    } else if (request.action == ManagerActionType.setSafeMode) {
+      arguments.add(request.safeMode! ? 'enabled' : 'disabled');
     } else if (request.recoveryPassword != null) {
       arguments.add('--password-stdin');
     }
@@ -552,9 +554,15 @@ class NativeManagerBackend implements ManagerBackend {
       false,
       warnings,
     );
-    final hibernateReclaimPath = await _capture(
-      'Hibernate reclaim path',
-      () => _readHibernateReclaimPath(diagnostics),
+    final safeMode = await _capture(
+      'Safe mode configuration',
+      _readSafeMode,
+      false,
+      warnings,
+    );
+    final physicalMemorySupported = await _capture(
+      'Physical memory size',
+      () => _readPhysicalMemory(diagnostics),
       true,
       warnings,
     );
@@ -718,7 +726,8 @@ class NativeManagerBackend implements ManagerBackend {
         luks: luks,
         tpmConfigured: tpmConfigured,
         hibernatePartition: hibernatePartition,
-        hibernateReclaimPath: hibernateReclaimPath,
+        physicalMemorySupported: physicalMemorySupported,
+        safeMode: safeMode,
         grubUpdated: grubUpdated,
         projectHeadersInstalled: installed.projectHeadersInstalled,
       ),
@@ -849,45 +858,41 @@ class NativeManagerBackend implements ManagerBackend {
     return diskSwapKiB >= int.parse(memory.group(1)!);
   }
 
-  Future<bool> _readHibernateReclaimPath(
+  static const _safeModeUnitPath =
+      '/etc/systemd/logind.conf.d/95-s4lockdown-safe-mode.conf';
+  static const _physicalMemoryMinimumKiB = 12 * 1024 * 1024;
+
+  // Safe mode is enabled when the logind drop-in that downgrades every
+  // hibernate trigger to suspend-to-RAM is installed.
+  Future<bool> _readSafeMode() => File(_safeModeUnitPath).exists();
+
+  // Physical memory is the total size of kernel memory blocks, which
+  // includes regions reserved from MemTotal such as integrated-GPU UMA.
+  Future<bool> _readPhysicalMemory(
     List<PreflightDiagnostic> diagnostics,
   ) async {
-    final meminfo = await _readDiagnosticFile(
-      '/proc/meminfo',
-      'memory-info',
+    final directory = Directory('/sys/devices/system/memory');
+    if (!await directory.exists()) {
+      throw const FileSystemException(
+          'Memory block directory is missing');
+    }
+    var blocks = 0;
+    await for (final entry in directory.list()) {
+      if (RegExp(r'/memory\d+$').hasMatch(entry.path)) blocks++;
+    }
+    if (blocks == 0) {
+      throw const FormatException('No memory blocks were enumerated');
+    }
+    final raw = await _readDiagnosticFile(
+      '/sys/devices/system/memory/block_size_bytes',
+      'memory-block-size',
       diagnostics,
     );
-    final swaps = await _readDiagnosticFile(
-      '/proc/swaps',
-      'swap-list',
-      diagnostics,
-    );
-    final memory = RegExp(r'^MemTotal:\s+(\d+)\s+kB$', multiLine: true)
-        .firstMatch(meminfo);
-    if (memory == null) {
-      throw const FormatException('MemTotal is missing from /proc/meminfo');
+    final blockSize = int.tryParse(raw.trim(), radix: 16);
+    if (blockSize == null || blockSize <= 0) {
+      throw const FormatException('Invalid memory block size');
     }
-    var zramSwapKiB = 0;
-    var zramPriority = -32768;
-    var diskSwapPriority = -32768;
-    for (final line in swaps.split('\n').skip(1)) {
-      final fields = line.trim().split(RegExp(r'\s+'));
-      if (fields.length < 5) continue;
-      final size = int.tryParse(fields[2]) ?? 0;
-      final priority = int.tryParse(fields[4]) ?? -32768;
-      if (fields[0].startsWith('/dev/zram')) {
-        zramSwapKiB += size;
-        if (priority > zramPriority) zramPriority = priority;
-      } else if (priority > diskSwapPriority) {
-        diskSwapPriority = priority;
-      }
-    }
-    return swapReclaimPathSafe(
-      memTotalKiB: int.parse(memory.group(1)!),
-      zramSwapKiB: zramSwapKiB,
-      zramPriority: zramPriority,
-      diskSwapPriority: diskSwapPriority,
-    );
+    return blockSize * blocks ~/ 1024 >= _physicalMemoryMinimumKiB;
   }
 
   Future<bool> _readGrubIntegration() async {
@@ -1435,6 +1440,18 @@ ManagerActionData _parseActionData(Map<String, dynamic> value) {
           swapSizeBytes > 1024 * 1024 * 1024 * 1024)) {
     throw const FormatException('Helper returned an invalid managed swap size');
   }
+  final safeMode = value['safeMode'];
+  bool? safeModeEnabled;
+  if (safeMode != null) {
+    if (safeMode == 'enabled') {
+      safeModeEnabled = true;
+    } else if (safeMode == 'disabled') {
+      safeModeEnabled = false;
+    } else {
+      throw const FormatException(
+          'Helper returned an invalid zram drain state');
+    }
+  }
   return ManagerActionData(
     mokStatus: mokStatus as String?,
     fingerprintSha256: fingerprint,
@@ -1454,6 +1471,7 @@ ManagerActionData _parseActionData(Map<String, dynamic> value) {
     passwordRecovery: recovery as String?,
     swapPath: swapPath as String?,
     swapSizeBytes: swapSizeBytes as int?,
+    safeMode: safeModeEnabled,
   );
 }
 
@@ -1537,6 +1555,12 @@ void _requireSuccessData(
       if (!tokenVerified || data.passwordRecovery != 'verified') {
         throw const FormatException(
           'Helper did not confirm TPM unlock and password recovery',
+        );
+      }
+    case ManagerActionType.setSafeMode:
+      if (data.safeMode != request.safeMode) {
+        throw const FormatException(
+          'Helper did not confirm the requested zram drain state',
         );
       }
     case ManagerActionType.repairSwap:
@@ -1905,7 +1929,8 @@ Map<String, Object?> _snapshotToJson(SystemSnapshot snapshot) => {
         'luks': snapshot.systemStatus.luks,
         'tpmConfigured': snapshot.systemStatus.tpmConfigured,
         'hibernatePartition': snapshot.systemStatus.hibernatePartition,
-        'hibernateReclaimPath': snapshot.systemStatus.hibernateReclaimPath,
+        'physicalMemorySupported': snapshot.systemStatus.physicalMemorySupported,
+        'safeMode': snapshot.systemStatus.safeMode,
         'grubUpdated': snapshot.systemStatus.grubUpdated,
         'projectHeadersInstalled':
             snapshot.systemStatus.projectHeadersInstalled,
@@ -1957,26 +1982,6 @@ Map<String, Object?> _snapshotToJson(SystemSnapshot snapshot) => {
       'warnings': snapshot.warnings,
     };
 
-/// Returns false when an oversized zram device can capture the memory reclaim
-/// the kernel needs to build a hibernation image. Swapping into zram moves
-/// pages within RAM instead of freeing them, so on small-memory machines a
-/// zram device at or above half of MemTotal with priority at least equal to
-/// disk-backed swap can starve image allocation.
-bool swapReclaimPathSafe({
-  required int memTotalKiB,
-  required int zramSwapKiB,
-  required int zramPriority,
-  required int diskSwapPriority,
-}) {
-  const smallMemoryLimitKiB = 12 * 1024 * 1024;
-  if (zramSwapKiB <= 0 || memTotalKiB >= smallMemoryLimitKiB) {
-    return true;
-  }
-  if (zramSwapKiB * 2 < memTotalKiB) {
-    return true;
-  }
-  return diskSwapPriority > zramPriority;
-}
 
 extension<T> on Iterable<T> {
   T? get firstOrNull {
@@ -1984,3 +1989,8 @@ extension<T> on Iterable<T> {
     return iterator.moveNext() ? iterator.current : null;
   }
 }
+
+/// Physical memory read from kernel memory blocks includes regions such as
+/// integrated-GPU UMA that MemTotal excludes.
+int physicalMemoryKiB({required int blocks, required int blockSizeBytes}) =>
+    blockSizeBytes * blocks ~/ 1024;

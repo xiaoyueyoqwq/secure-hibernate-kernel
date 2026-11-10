@@ -15,6 +15,7 @@ class SecurityPage extends StatefulWidget {
 class _SecurityPageState extends State<SecurityPage> {
   bool mokBusy = false;
   bool actionBusy = false;
+  bool drainBusy = false;
 
   Future<void> inspectMok() async {
     setState(() => mokBusy = true);
@@ -79,6 +80,13 @@ class _SecurityPageState extends State<SecurityPage> {
       recoveryPassword?.fillRange(0, recoveryPassword.length, 0);
       if (mounted) setState(() => actionBusy = false);
     }
+  }
+
+  void handleSafeModeToggle(bool value) {
+    setState(() => drainBusy = true);
+    context.manager.changeSafeMode(value).whenComplete(() {
+      if (mounted) setState(() => drainBusy = false);
+    });
   }
 
   @override
@@ -237,6 +245,45 @@ class _SecurityPageState extends State<SecurityPage> {
               ],
             ),
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        const SizedBox(height: 32),
+        SectionTitle(t.text('security.hibernation')),
+        const SizedBox(height: 16),
+        StatusRow(
+          label: t.text('security.safeMode'),
+          value: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(!manager.snapshotLoaded
+                  ? t.text('overview.unknown')
+                  : manager.safeModeEnabled
+                      ? t.text('wizard.details.enabled')
+                      : t.text('wizard.details.disabled')),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: t.text('security.safeModeHelp'),
+                child: Icon(LucideIcons.circleHelp,
+                    size: 14, color: context.palette.textFaint),
+              ),
+            ],
+          ),
+          status: !manager.snapshotLoaded
+              ? StatusKind.info
+              : manager.safeModeEnabled
+                  ? StatusKind.ok
+                  : manager.physicalMemorySupported
+                      ? StatusKind.info
+                      : StatusKind.warning,
+          description: manager.safeModeEnabled ||
+                  manager.physicalMemorySupported
+              ? t.text('security.safeModeHelp')
+              : t.text('security.safeModeSuggested'),
+          action: AppSwitch(
+            value: manager.safeModeEnabled,
+            onChanged: drainBusy || !manager.snapshotLoaded
+                ? null
+                : handleSafeModeToggle,
           ),
         ),
       ],

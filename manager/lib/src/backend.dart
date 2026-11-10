@@ -118,7 +118,8 @@ class SystemStatus {
     required this.luks,
     required this.tpmConfigured,
     required this.hibernatePartition,
-    required this.hibernateReclaimPath,
+    required this.physicalMemorySupported,
+    required this.safeMode,
     required this.grubUpdated,
     required this.projectHeadersInstalled,
   });
@@ -130,7 +131,8 @@ class SystemStatus {
   final bool luks;
   final bool tpmConfigured;
   final bool hibernatePartition;
-  final bool hibernateReclaimPath;
+  final bool physicalMemorySupported;
+  final bool safeMode;
   final bool grubUpdated;
   final bool projectHeadersInstalled;
 }
@@ -256,6 +258,7 @@ enum ManagerActionType {
   setPolicy,
   setKernelRetention,
   removeKernel,
+  setSafeMode,
 }
 
 extension ManagerActionWireValue on ManagerActionType {
@@ -275,6 +278,7 @@ extension ManagerActionWireValue on ManagerActionType {
         ManagerActionType.setPolicy => 'set-policy',
         ManagerActionType.setKernelRetention => 'set-kernel-retention',
         ManagerActionType.removeKernel => 'remove-kernel',
+        ManagerActionType.setSafeMode => 'set-safe-mode',
       };
 }
 
@@ -285,6 +289,7 @@ class ManagerActionRequest {
     this.release,
     this.projectKernelHistory,
     this.recoveryPassword,
+    this.safeMode,
   });
 
   final ManagerActionType action;
@@ -292,6 +297,7 @@ class ManagerActionRequest {
   final String? release;
   final int? projectKernelHistory;
   final Uint8List? recoveryPassword;
+  final bool? safeMode;
 }
 
 class ManagerTokenResult {
@@ -321,6 +327,7 @@ class ManagerActionData {
     this.passwordRecovery,
     this.swapPath,
     this.swapSizeBytes,
+    this.safeMode,
   });
 
   final String? mokStatus;
@@ -341,6 +348,7 @@ class ManagerActionData {
   final String? passwordRecovery;
   final String? swapPath;
   final int? swapSizeBytes;
+  final bool? safeMode;
 }
 
 enum ManagerActionStatus { success, cancelled, error }
