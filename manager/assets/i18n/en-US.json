@@ -234,6 +234,8 @@
       "lockdownHelp": "Why: Kernel Lockdown prevents privileged software from bypassing the Secure Boot trust chain through low-level kernel access. How: enable Secure Boot, then boot an official Ubuntu kernel or a project-signed kernel that supports Lockdown and check again.",
       "luksHelp": "Why: hibernation writes session memory, application data, and potentially key material to Swap. Without LUKS, an offline party can read that image. How: use an encrypted Ubuntu installation or migrate the root volume manually. Installation may continue without it.",
       "hibernationSpaceHelp": "Why: suspend-to-disk needs a disk-backed Swap file at least as large as physical memory. How: select Fix Automatically to create or replace /swap.img safely.",
+      "reclaimPath": "Memory reclaim path",
+      "reclaimPathHelp": "Why: under memory pressure the kernel frees RAM into swap to build the hibernation image; reclaim captured by an oversized zram device never leaves RAM. How: keep zram below half of physical memory or give disk-backed swap a higher priority.",
       "officialFallbackHelp": "Why: an official Ubuntu kernel provides an independent recovery boot path. How: install the Ubuntu HWE kernel meta-package before continuing.",
       "tpmUnavailableWithoutLuks": "TPM automatic unlock is not applicable without a LUKS root volume."
     }

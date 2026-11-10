@@ -43,6 +43,7 @@ SystemSnapshot _completeSnapshot({
       luks: luks,
       tpmConfigured: tpmConfigured,
       hibernatePartition: true,
+      hibernateReclaimPath: true,
       grubUpdated: true,
       projectHeadersInstalled: true,
     ),
@@ -1046,5 +1047,67 @@ void main() {
     expect(kernels.last.status, KernelStatus.available);
     expect(kernels.last.version, '7.0.12-29-vmstat-hibernate');
     expect(kernels.last.releaseDate, '2026-08-06');
+  });
+
+  group('swap reclaim path', () {
+    test('accepts the absence of zram on small memory', () {
+      expect(
+        swapReclaimPathSafe(
+          memTotalKiB: 8 * 1024 * 1024,
+          zramSwapKiB: 0,
+          zramPriority: -32768,
+          diskSwapPriority: -1,
+        ),
+        isTrue,
+      );
+    });
+
+    test('accepts any zram size on machines with enough memory', () {
+      expect(
+        swapReclaimPathSafe(
+          memTotalKiB: 16 * 1024 * 1024,
+          zramSwapKiB: 16 * 1024 * 1024,
+          zramPriority: 1000,
+          diskSwapPriority: -1,
+        ),
+        isTrue,
+      );
+    });
+
+    test('accepts a small zram device on small memory', () {
+      expect(
+        swapReclaimPathSafe(
+          memTotalKiB: 8 * 1024 * 1024,
+          zramSwapKiB: 2 * 1024 * 1024,
+          zramPriority: 1000,
+          diskSwapPriority: -1,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects an oversized zram that outranks disk swap', () {
+      expect(
+        swapReclaimPathSafe(
+          memTotalKiB: 8 * 1024 * 1024,
+          zramSwapKiB: 8 * 1024 * 1024,
+          zramPriority: 1000,
+          diskSwapPriority: -1,
+        ),
+        isFalse,
+      );
+    });
+
+    test('accepts an oversized zram when disk swap reclaims first', () {
+      expect(
+        swapReclaimPathSafe(
+          memTotalKiB: 8 * 1024 * 1024,
+          zramSwapKiB: 8 * 1024 * 1024,
+          zramPriority: -1,
+          diskSwapPriority: 100,
+        ),
+        isTrue,
+      );
+    });
   });
 }

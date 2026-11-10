@@ -112,6 +112,7 @@ class ManagerController extends ChangeNotifier {
       secureBoot = true;
       luks = true;
       hibernationCapacity = true;
+      hibernationReclaimPath = true;
       grubConfigured = true;
       headersInstalled = true;
       snapshotLoaded = true;
@@ -178,6 +179,7 @@ class ManagerController extends ChangeNotifier {
   bool tpmConfigured = false;
   TpmHealth tpmHealth = TpmHealth.unchecked;
   bool hibernationCapacity = false;
+  bool hibernationReclaimPath = false;
   bool grubConfigured = false;
   bool headersInstalled = false;
   bool snapshotLoaded = false;
@@ -807,6 +809,7 @@ class ManagerController extends ChangeNotifier {
       tpmHealth = TpmHealth.unchecked;
     }
     hibernationCapacity = status.hibernatePartition;
+    hibernationReclaimPath = status.hibernateReclaimPath;
     grubConfigured = status.grubUpdated;
     headersInstalled = status.projectHeadersInstalled;
     kernels = List.unmodifiable(snapshot.kernels);
@@ -1105,6 +1108,7 @@ class ManagerController extends ChangeNotifier {
           luks: luks,
           tpmConfigured: tpmConfigured,
           hibernatePartition: hibernationCapacity,
+          hibernateReclaimPath: hibernationReclaimPath,
           grubUpdated: grubConfigured,
           projectHeadersInstalled: headersInstalled,
         ),

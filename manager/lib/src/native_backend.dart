@@ -552,6 +552,12 @@ class NativeManagerBackend implements ManagerBackend {
       false,
       warnings,
     );
+    final hibernateReclaimPath = await _capture(
+      'Hibernate reclaim path',
+      () => _readHibernateReclaimPath(diagnostics),
+      true,
+      warnings,
+    );
     final grubUpdated = await _capture(
       'GRUB integration',
       _readGrubIntegration,
@@ -712,6 +718,7 @@ class NativeManagerBackend implements ManagerBackend {
         luks: luks,
         tpmConfigured: tpmConfigured,
         hibernatePartition: hibernatePartition,
+        hibernateReclaimPath: hibernateReclaimPath,
         grubUpdated: grubUpdated,
         projectHeadersInstalled: installed.projectHeadersInstalled,
       ),
@@ -840,6 +847,47 @@ class NativeManagerBackend implements ManagerBackend {
       diskSwapKiB += int.tryParse(fields[2]) ?? 0;
     }
     return diskSwapKiB >= int.parse(memory.group(1)!);
+  }
+
+  Future<bool> _readHibernateReclaimPath(
+    List<PreflightDiagnostic> diagnostics,
+  ) async {
+    final meminfo = await _readDiagnosticFile(
+      '/proc/meminfo',
+      'memory-info',
+      diagnostics,
+    );
+    final swaps = await _readDiagnosticFile(
+      '/proc/swaps',
+      'swap-list',
+      diagnostics,
+    );
+    final memory = RegExp(r'^MemTotal:\s+(\d+)\s+kB$', multiLine: true)
+        .firstMatch(meminfo);
+    if (memory == null) {
+      throw const FormatException('MemTotal is missing from /proc/meminfo');
+    }
+    var zramSwapKiB = 0;
+    var zramPriority = -32768;
+    var diskSwapPriority = -32768;
+    for (final line in swaps.split('\n').skip(1)) {
+      final fields = line.trim().split(RegExp(r'\s+'));
+      if (fields.length < 5) continue;
+      final size = int.tryParse(fields[2]) ?? 0;
+      final priority = int.tryParse(fields[4]) ?? -32768;
+      if (fields[0].startsWith('/dev/zram')) {
+        zramSwapKiB += size;
+        if (priority > zramPriority) zramPriority = priority;
+      } else if (priority > diskSwapPriority) {
+        diskSwapPriority = priority;
+      }
+    }
+    return swapReclaimPathSafe(
+      memTotalKiB: int.parse(memory.group(1)!),
+      zramSwapKiB: zramSwapKiB,
+      zramPriority: zramPriority,
+      diskSwapPriority: diskSwapPriority,
+    );
   }
 
   Future<bool> _readGrubIntegration() async {
@@ -1857,6 +1905,7 @@ Map<String, Object?> _snapshotToJson(SystemSnapshot snapshot) => {
         'luks': snapshot.systemStatus.luks,
         'tpmConfigured': snapshot.systemStatus.tpmConfigured,
         'hibernatePartition': snapshot.systemStatus.hibernatePartition,
+        'hibernateReclaimPath': snapshot.systemStatus.hibernateReclaimPath,
         'grubUpdated': snapshot.systemStatus.grubUpdated,
         'projectHeadersInstalled':
             snapshot.systemStatus.projectHeadersInstalled,
@@ -1907,6 +1956,27 @@ Map<String, Object?> _snapshotToJson(SystemSnapshot snapshot) => {
       },
       'warnings': snapshot.warnings,
     };
+
+/// Returns false when an oversized zram device can capture the memory reclaim
+/// the kernel needs to build a hibernation image. Swapping into zram moves
+/// pages within RAM instead of freeing them, so on small-memory machines a
+/// zram device at or above half of MemTotal with priority at least equal to
+/// disk-backed swap can starve image allocation.
+bool swapReclaimPathSafe({
+  required int memTotalKiB,
+  required int zramSwapKiB,
+  required int zramPriority,
+  required int diskSwapPriority,
+}) {
+  const smallMemoryLimitKiB = 12 * 1024 * 1024;
+  if (zramSwapKiB <= 0 || memTotalKiB >= smallMemoryLimitKiB) {
+    return true;
+  }
+  if (zramSwapKiB * 2 < memTotalKiB) {
+    return true;
+  }
+  return diskSwapPriority > zramPriority;
+}
 
 extension<T> on Iterable<T> {
   T? get firstOrNull {

@@ -118,6 +118,7 @@ class SystemStatus {
     required this.luks,
     required this.tpmConfigured,
     required this.hibernatePartition,
+    required this.hibernateReclaimPath,
     required this.grubUpdated,
     required this.projectHeadersInstalled,
   });
@@ -129,6 +130,7 @@ class SystemStatus {
   final bool luks;
   final bool tpmConfigured;
   final bool hibernatePartition;
+  final bool hibernateReclaimPath;
   final bool grubUpdated;
   final bool projectHeadersInstalled;
 }

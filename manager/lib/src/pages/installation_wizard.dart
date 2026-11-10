@@ -1885,6 +1885,20 @@ class WizardStepDetails extends StatelessWidget {
                     : StatusKind.error,
           ),
           DetailRow(
+            label: d('reclaimPath'),
+            help: d('reclaimPathHelp'),
+            value: !manager.snapshotLoaded
+                ? t.text('overview.unknown')
+                : manager.hibernationReclaimPath
+                    ? d('ready')
+                    : d('attention'),
+            status: !manager.snapshotLoaded
+                ? StatusKind.pending
+                : manager.hibernationReclaimPath
+                    ? StatusKind.ok
+                    : StatusKind.warning,
+          ),
+          DetailRow(
             label: d('officialFallback'),
             help: d('officialFallbackHelp'),
             value: !manager.snapshotLoaded
@@ -2439,6 +2453,18 @@ String formatPreflightLog(ManagerController manager) {
       passed: manager.hibernationCapacity,
     ),
     (
+      id: 'zram_reclaim_path',
+      source: '/proc/meminfo + /proc/swaps',
+      expected: 'zram sized below half of MemTotal or lower priority '
+          'than disk-backed swap',
+      observed: manager.hibernationReclaimPath
+          ? 'reclaim reaches disk-backed swap'
+          : 'oversized high-priority zram may starve image allocation',
+      failure: 'reclaim into zram does not free physical memory, so the '
+          'hibernation image may fail to allocate',
+      passed: manager.hibernationReclaimPath,
+    ),
+    (
       id: 'official_kernel_fallback',
       source: '/usr/bin/dpkg-query linux-image-*',
       expected: 'at least one installed official Ubuntu kernel',
@@ -2447,10 +2473,13 @@ String formatPreflightLog(ManagerController manager) {
       passed: official.isNotEmpty,
     ),
   ];
-  final failed =
-      checks.where((check) => !check.passed && check.id != 'luks_root').length;
-  final warned =
-      checks.where((check) => !check.passed && check.id == 'luks_root').length;
+  const warningChecks = {'luks_root', 'zram_reclaim_path'};
+  final failed = checks
+      .where((check) => !check.passed && !warningChecks.contains(check.id))
+      .length;
+  final warned = checks
+      .where((check) => !check.passed && warningChecks.contains(check.id))
+      .length;
   final passed = checks.where((check) => check.passed).length;
   final lines = <String>[
     'secure-hibernate-manager preflight',
@@ -2463,7 +2492,7 @@ String formatPreflightLog(ManagerController manager) {
     'checks_failed=$failed',
   ];
   for (final check in checks) {
-    final warning = !check.passed && check.id == 'luks_root';
+    final warning = !check.passed && warningChecks.contains(check.id);
     lines.addAll([
       '',
       '[${check.passed ? 'PASS' : warning ? 'WARN' : 'FAIL'}] ${check.id}',
