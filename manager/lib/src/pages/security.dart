@@ -275,10 +275,10 @@ class _SecurityPageState extends State<SecurityPage> {
                   : manager.physicalMemorySupported
                       ? StatusKind.info
                       : StatusKind.warning,
-          description: manager.safeModeEnabled ||
-                  manager.physicalMemorySupported
-              ? t.text('security.safeModeHelp')
-              : t.text('security.safeModeSuggested'),
+          description:
+              manager.safeModeEnabled || manager.physicalMemorySupported
+                  ? t.text('security.safeModeHelp')
+                  : t.text('security.safeModeSuggested'),
           action: AppSwitch(
             value: manager.safeModeEnabled,
             onChanged: drainBusy || !manager.snapshotLoaded

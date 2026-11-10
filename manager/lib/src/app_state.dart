@@ -830,7 +830,9 @@ class ManagerController extends ChangeNotifier {
     grubConfigured = status.grubUpdated;
     headersInstalled = status.projectHeadersInstalled;
     kernels = List.unmodifiable(snapshot.kernels);
-    if (native && setupComplete && !physicalMemorySupported &&
+    if (native &&
+        setupComplete &&
+        !physicalMemorySupported &&
         activePage != ManagerPage.kernels) {
       activePage = ManagerPage.security;
     }

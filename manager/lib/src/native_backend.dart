@@ -873,8 +873,7 @@ class NativeManagerBackend implements ManagerBackend {
   ) async {
     final directory = Directory('/sys/devices/system/memory');
     if (!await directory.exists()) {
-      throw const FileSystemException(
-          'Memory block directory is missing');
+      throw const FileSystemException('Memory block directory is missing');
     }
     var blocks = 0;
     await for (final entry in directory.list()) {
@@ -1929,7 +1928,8 @@ Map<String, Object?> _snapshotToJson(SystemSnapshot snapshot) => {
         'luks': snapshot.systemStatus.luks,
         'tpmConfigured': snapshot.systemStatus.tpmConfigured,
         'hibernatePartition': snapshot.systemStatus.hibernatePartition,
-        'physicalMemorySupported': snapshot.systemStatus.physicalMemorySupported,
+        'physicalMemorySupported':
+            snapshot.systemStatus.physicalMemorySupported,
         'safeMode': snapshot.systemStatus.safeMode,
         'grubUpdated': snapshot.systemStatus.grubUpdated,
         'projectHeadersInstalled':
@@ -1981,7 +1981,6 @@ Map<String, Object?> _snapshotToJson(SystemSnapshot snapshot) => {
       },
       'warnings': snapshot.warnings,
     };
-
 
 extension<T> on Iterable<T> {
   T? get firstOrNull {
