@@ -103,6 +103,7 @@ Delete both the `.patch` and its `.guard` once Ubuntu ships the change.
 | `0001-hibernate-allow-lockdown-opt-in.patch` | — (flavor `hibernate`) | Adds the default-off `HIBERNATION_ALLOW_LOCKDOWN` Kconfig switch permitting hibernation under integrity lockdown. The project's core patch; always applied. |
 | `0002-vmstat-fix-vmstat-shepherd-double-scheduling.patch` | `vmstat` | Checks `work_busy()` instead of `delayed_work_pending()` in `vmstat_shepherd` so a running `vmstat_update` is not queued a second time, which previously stalled per-CPU vmstat updates and could hang the system. Guarded on `!work_busy(&dw->work)` in `mm/vmstat.c`. |
 | `0003-elan100k-force-dell0a86-i2c-100khz.patch` | `elan100k` | Adds `DELL0A86` to the ACPI I2C 100 kHz quirk table, working around intermittent touchpad sluggishness on buses the firmware configures at 400 kHz. Guarded on `{ "DELL0A86", 0 },` in `drivers/i2c/i2c-core-acpi.c`. |
+| `0004-smu-add-ryzen-smu-driver.patch` | `smu` | Imports `amkillam/ryzen_smu` (`drv.c`/`smu.c`/`smu.h`) into `drivers/misc/ryzen_smu/` and wires `CONFIG_RYZEN_SMU` (module) into `drivers/misc`. Exposes the AMD SMU mailbox and Renoir PM table under `/sys/kernel/ryzen_smu_drv/` for runtime power-limit control on Zen 2 systems without CPPC. Purely additive; upstream never carries it, so no `.guard`. |
 
 Keep this table in sync with `patches/` when adding or removing a patch. File
 names, tag derivation, and guard semantics are enforced by

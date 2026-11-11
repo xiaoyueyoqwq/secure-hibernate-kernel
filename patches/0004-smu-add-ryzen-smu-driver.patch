@@ -1,0 +1,2138 @@
+Add the ryzen_smu SMU command driver as an in-tree module.
+
+Imports drv.c/smu.c/smu.h from amkillam/ryzen_smu (GPL-2.0, based on
+leogx9r/ryzen_smu) into drivers/misc/ryzen_smu/ and wires a new
+tristate CONFIG_RYZEN_SMU into drivers/misc. The driver binds to the
+MP1/RSMU/HSMP mailbox PCI functions and exposes SMU service commands
+plus the Renoir power-monitor table under /sys/kernel/ryzen_smu_drv/.
+
+Used for dynamic power management on Zen 2 systems whose firmware does
+not expose CPPC (_CPC): STAPM and related limits can be adjusted at
+runtime instead of relying on amd_pstate. The module is built but not
+auto-loaded; enabling it is an explicit choice.
+
+Upstream: https://github.com/amkillam/ryzen_smu @ d298366
+
+---
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index 5cc79d1..bb4f66c 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -660,4 +660,5 @@ source "drivers/misc/mchp_pci1xxxx/Kconfig"
+ source "drivers/misc/keba/Kconfig"
+ source "drivers/misc/amd-sbi/Kconfig"
+ source "drivers/misc/rp1/Kconfig"
++source "drivers/misc/ryzen_smu/Kconfig"
+ endmenu
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index b32a259..1370496 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -75,3 +75,4 @@ obj-$(CONFIG_MCHP_LAN966X_PCI)	+= lan966x-pci.o
+ obj-y				+= keba/
+ obj-y				+= amd-sbi/
+ obj-$(CONFIG_MISC_RP1)		+= rp1/
++obj-$(CONFIG_RYZEN_SMU)		+= ryzen_smu/
+diff --git a/drivers/misc/ryzen_smu/Kconfig b/drivers/misc/ryzen_smu/Kconfig
+new file mode 100644
+index 0000000..c9f4815
+--- /dev/null
++++ b/drivers/misc/ryzen_smu/Kconfig
+@@ -0,0 +1,10 @@
++config RYZEN_SMU
++	tristate "AMD Ryzen SMU command interface"
++	depends on X86 && PCI
++	help
++	  Exposes the AMD System Management Unit (SMU) mailbox for Ryzen
++	  processors through sysfs files under /sys/kernel/ryzen_smu_drv/.
++
++	  Supported families range from Raven Ridge to Strix Point and
++	  include Renoir power-monitor table access. Allows userspace
++	  control of SMU services such as power limits; use with care.
+diff --git a/drivers/misc/ryzen_smu/Makefile b/drivers/misc/ryzen_smu/Makefile
+new file mode 100644
+index 0000000..7ada3b4
+--- /dev/null
++++ b/drivers/misc/ryzen_smu/Makefile
+@@ -0,0 +1,2 @@
++obj-$(CONFIG_RYZEN_SMU)	+= ryzen_smu.o
++ryzen_smu-y		:= drv.o smu.o
+diff --git a/drivers/misc/ryzen_smu/drv.c b/drivers/misc/ryzen_smu/drv.c
+new file mode 100755
+index 0000000..9dd7471
+--- /dev/null
++++ b/drivers/misc/ryzen_smu/drv.c
+@@ -0,0 +1,484 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/* Copyright (C) 2020 Leonardo Gates <leogatesx9r@protonmail.com> */
++/* Ryzen SMU Command Driver */
++
++#include <linux/types.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/errno.h>
++#include <linux/string.h>
++#include <linux/init.h>
++#include <linux/kobject.h>
++#include <linux/sysfs.h>
++#include <uapi/linux/stat.h>
++#include <linux/version.h>
++
++#include "smu.h"
++
++#ifndef KBUILD_MODNAME
++    #define KBUILD_MODNAME "ryzen_smu"
++#endif
++
++MODULE_AUTHOR("Leonardo Gates <leogatesx9r@protonmail.com>");
++MODULE_DESCRIPTION("AMD Ryzen SMU Command Driver");
++MODULE_VERSION("0.1.7");
++MODULE_LICENSE("GPL");
++
++#define MSEC_TO_NSEC(x)                    (x * 1000000)
++
++
++#define PCI_DEVICE_ID_AMD_17H_ROOT          0x1450
++#define PCI_DEVICE_ID_AMD_17H_M10H_ROOT     0x15d0
++#define PCI_DEVICE_ID_AMD_17H_M60H_ROOT     0x1630
++#define PCI_DEVICE_ID_AMD_17H_M30H_ROOT     0x1480
++
++// https://github.com/torvalds/linux/blob/master/arch/x86/kernel/amd_nb.c
++#define PCI_DEVICE_ID_AMD_1AH_M00H_ROOT     0x153a
++#define PCI_DEVICE_ID_AMD_1AH_M20H_ROOT     0x1507
++#define PCI_DEVICE_ID_AMD_1AH_M60H_ROOT     0x1122
++#define PCI_DEVICE_ID_AMD_17H_MA0H_ROOT     0x14b5
++#define PCI_DEVICE_ID_AMD_19H_M10H_ROOT     0x14a4
++#define PCI_DEVICE_ID_AMD_19H_M40H_ROOT     0x14b5
++#define PCI_DEVICE_ID_AMD_19H_M60H_ROOT     0x14d8
++#define PCI_DEVICE_ID_AMD_19H_M70H_ROOT     0x14e8
++#define PCI_DEVICE_ID_AMD_MI200_ROOT        0x14bb
++#define PCI_DEVICE_ID_AMD_MI300_ROOT        0x14f8
++
++#define MAX_ATTRS_LEN                      13
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
++    #error "Unsupported kernel version. Minimum: v4.19"
++#endif
++
++#define __RO_ATTR(attr) \
++    static struct kobj_attribute dev_attr_##attr = \
++        __ATTR(attr, S_IRUSR | S_IRGRP | S_IROTH, attr##_show, attr_store_null);
++
++#define __RW_ATTR(attr) \
++    static struct kobj_attribute dev_attr_##attr = \
++        __ATTR(attr, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, attr##_show, attr##_store);
++
++static struct ryzen_smu_data {
++    struct pci_dev*         device;
++    struct kobject*         drv_kobj;
++
++    char                    smu_version[64];
++    smu_req_args_t          smu_args;
++    u32                     smu_rsp;
++
++    u32                     smn_result;
++
++    u8*                     pm_table;
++    u32                     pm_table_version;
++    size_t                  pm_table_read_size;
++} g_driver = {
++    .device               = NULL,
++
++    .drv_kobj             = NULL,
++
++    .smu_version          = { 0 },
++    .smu_args             = { .args = { 0, 0, 0, 0, 0, 0 } },
++    .smu_rsp              = SMU_Return_OK,
++
++    .smn_result           = 0,
++
++    .pm_table             = NULL,
++    .pm_table_version     = 0,
++    .pm_table_read_size   = PM_TABLE_MAX_SIZE,
++};
++
++/* SMU Command Parameters. */
++uint smu_timeout_attempts = 8192;
++
++static ssize_t attr_store_null(struct kobject *kobj, struct kobj_attribute *attr, const char *buff, size_t count) {
++    return 0;
++}
++
++static ssize_t drv_version_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    return sprintf(buff, "%s\n", THIS_MODULE->version);
++}
++
++static ssize_t version_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    return sprintf(buff, "%s\n", g_driver.smu_version);
++}
++
++static ssize_t mp1_if_version_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    return sprintf(buff, "%d\n", smu_get_mp1_if_version());
++}
++
++static ssize_t codename_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    return sprintf(buff, "%02d\n", smu_get_codename());
++}
++
++static ssize_t pm_table_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    if (smu_read_pm_table(g_driver.device, g_driver.pm_table, &g_driver.pm_table_read_size) != SMU_Return_OK)
++        return 0;
++
++    memcpy(buff, g_driver.pm_table, g_driver.pm_table_read_size);
++    return g_driver.pm_table_read_size;
++}
++
++static ssize_t pm_table_version_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    ssize_t sz = sizeof(g_driver.pm_table_version);
++
++    memcpy(buff, &g_driver.pm_table_version, sz);
++    return sz;
++}
++
++static ssize_t pm_table_size_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    ssize_t sz = sizeof(g_driver.pm_table_read_size);
++
++    memcpy(buff, &g_driver.pm_table_read_size, sz);
++    return sz;
++}
++
++static ssize_t rsmu_cmd_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    ssize_t sz = sizeof(g_driver.smu_rsp);
++
++    memcpy(buff, &g_driver.smu_rsp, sz);
++    return sz;
++}
++
++static ssize_t rsmu_cmd_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buff, size_t count) {
++    u32 op;
++
++    // To date, there has never been a command that actually exceeds FFh
++    //  so 32 bits is overkill but still support it.
++    switch (count) {
++        case sizeof(u32):
++            op = *(u32*)buff;
++            break;
++        case sizeof(u8):
++            op = *(u8*)buff;
++            break;
++        default:
++            return 0;
++    }
++
++    g_driver.smu_rsp = smu_send_command(g_driver.device, op, &g_driver.smu_args, MAILBOX_TYPE_RSMU);
++    return count;
++}
++
++static ssize_t mp1_smu_cmd_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    ssize_t sz = sizeof(g_driver.smu_rsp);
++
++    memcpy(buff, &g_driver.smu_rsp, sz);
++    return sz;
++}
++
++static ssize_t mp1_smu_cmd_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buff, size_t count) {
++    u32 op;
++
++    // To date, there has never been a command that actually exceeds FFh
++    //  so 32 bits is overkill but still support it.
++    switch (count) {
++        case sizeof(u32):
++            op = *(u32*)buff;
++            break;
++        case sizeof(u8):
++            op = *(u8*)buff;
++            break;
++        default:
++            return 0;
++    }
++
++    g_driver.smu_rsp = smu_send_command(g_driver.device, op, &g_driver.smu_args, MAILBOX_TYPE_MP1);
++    return count;
++}
++
++static ssize_t hsmp_smu_cmd_show(struct kobject* kobj, struct kobj_attribute* attr, char* buff) {
++    ssize_t sz = sizeof(g_driver.smu_rsp);
++
++    memcpy(buff, &g_driver.smu_rsp, sz);
++    return sz;
++}
++
++static ssize_t hsmp_smu_cmd_store(struct kobject* kobj, struct kobj_attribute* attr, const char* buff, size_t count) {
++    u32 op;
++
++    // To date, there has never been a command that actually exceeds FFh
++    //  so 32 bits is overkill but still support it.
++    switch (count) {
++        case sizeof(u32) :
++            op = *(u32*)buff;
++            break;
++            case sizeof(u8) :
++                op = *(u8*)buff;
++                break;
++            default:
++                return 0;
++    }
++
++    g_driver.smu_rsp = smu_send_command(g_driver.device, op, &g_driver.smu_args, MAILBOX_TYPE_HSMP);
++    return count;
++}
++
++static ssize_t smu_args_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    ssize_t sz = sizeof(g_driver.smu_args);
++
++    memcpy(buff, &g_driver.smu_args.args, sz);
++    return sz;
++}
++
++static ssize_t smu_args_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buff, size_t count) {
++    if (count != sizeof(u32) * 6)
++        return 0;
++
++    memcpy(g_driver.smu_args.args, buff, count);
++    return count;
++}
++
++static ssize_t smn_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {
++    ssize_t sz = sizeof(g_driver.smn_result);
++
++    memcpy(buff, &g_driver.smn_result, sz);
++    return sz;
++}
++
++static ssize_t smn_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buff,
++size_t count) {
++    u32 address, value;
++
++    switch (count) {
++        case sizeof(u32):
++            // One word written means we read this address at buff[0]
++            address = *(u32*)buff;
++
++            if (smu_read_address(g_driver.device, address, &g_driver.smn_result) != SMU_Return_OK)
++                pr_debug("Failed to read SMN address 0x%x\n", address);
++            break;
++        case (sizeof(u32) * 2):
++            // Two words written means we write the second word to the address of the first word
++            address = *(u32*)buff;
++            value = *(u32*)(buff + sizeof(u32));
++
++            if (smu_write_address(g_driver.device, address, value) != SMU_Return_OK) {
++                pr_debug("Failed to write SMN address 0x%x with value 0x%x\n", address, value);
++                g_driver.smn_result = SMU_Return_PCIFailed;
++            }
++            else
++                g_driver.smn_result = SMU_Return_OK;
++            break;
++        default:
++            return 0;
++    }
++
++    return count;
++}
++
++__RO_ATTR (drv_version);
++__RO_ATTR (version);
++__RO_ATTR (mp1_if_version);
++__RO_ATTR (codename);
++
++__RO_ATTR (pm_table);
++__RO_ATTR (pm_table_size);
++__RO_ATTR (pm_table_version);
++
++__RW_ATTR (rsmu_cmd);
++__RW_ATTR (mp1_smu_cmd);
++__RW_ATTR (hsmp_smu_cmd);
++__RW_ATTR (smu_args);
++
++__RW_ATTR (smn);
++
++static struct attribute *drv_attrs[MAX_ATTRS_LEN] = {
++    &dev_attr_drv_version.attr,
++    &dev_attr_version.attr,
++    &dev_attr_mp1_if_version.attr,
++    &dev_attr_codename.attr,
++
++    &dev_attr_smu_args.attr,
++    &dev_attr_mp1_smu_cmd.attr,
++    &dev_attr_hsmp_smu_cmd.attr,
++
++    &dev_attr_smn.attr,
++
++    // -- NOTE: Do not edit below here. --
++
++    // RSMU Optional Pointer
++    NULL,
++
++    // PM Table Optional Pointers
++    NULL,
++    NULL,
++    NULL,
++
++    // Termination Pointer
++    NULL,
++};
++
++static struct attribute_group drv_attr_group = {
++    .attrs = drv_attrs,
++};
++
++static int ryzen_smu_get_version(enum smu_mailbox mb, int show) {
++    u32 ver;
++
++    ver = smu_get_version(g_driver.device, mb);
++    if (ver >= 0 && ver <= 0xFF) {
++        pr_err("Failed to query the %sSMU version: %d",
++            mb == MAILBOX_TYPE_RSMU ? "R" : "MP1 ", ver);
++        return -EINVAL;
++    }
++
++    // In case this just tests for mailbox functionality, we don't need to output anything.
++    if (show) {
++        if (ver & 0xFF000000)
++            sprintf(g_driver.smu_version, "%d.%d.%d.%d",
++                (ver >> 24) & 0xff, (ver >> 16) & 0xff, (ver >> 8) & 0xff, ver & 0xff);
++        else
++            sprintf(g_driver.smu_version, "%d.%d.%d", (ver >> 16) & 0xff, (ver >> 8) & 0xff, ver & 0xff);
++
++        pr_info("SMU v%s", g_driver.smu_version);
++    }
++
++    return 0;
++}
++
++static int ryzen_smu_probe(struct pci_dev *dev, const struct pci_device_id *id) {
++    enum smu_return_val ret;
++
++    g_driver.device = dev;
++
++    pr_info("loading version: %s", THIS_MODULE->version);
++
++    // Clamp values.
++    if (smu_timeout_attempts > SMU_RETRIES_MAX)
++        smu_timeout_attempts = SMU_RETRIES_MAX;
++    if (smu_timeout_attempts < SMU_RETRIES_MIN)
++        smu_timeout_attempts = SMU_RETRIES_MIN;
++
++    // Detect processor class & figure out MP1/RSMU support.
++    if (smu_init(g_driver.device) != 0) {
++        pr_err("Failed to initialize the SMU for use");
++        return -ENODEV;
++    }
++
++    // Check if MP1 is working as we guarantee this support.
++    if (ryzen_smu_get_version(MAILBOX_TYPE_MP1, 1) != 0) {
++        pr_err("Failed to obtain the SMU version");
++        return -EINVAL;
++    }
++
++    // Check if RSMU is valid to determine if to skip PM table setup.
++    if (ryzen_smu_get_version(MAILBOX_TYPE_RSMU, 0) == 0) {
++        // We do something absolutely stupid here and use relative offsets to overwrite offsets
++        //  in the drv_attrs[] array.
++        //
++        // This shouldn't *typically* cause errors unless the array structure is messed with.
++        // So, we left a warning above to not touch it.
++        drv_attrs[MAX_ATTRS_LEN - 5] = &dev_attr_rsmu_cmd.attr;
++    }
++    else {
++        pr_info("RSMU Mailbox: Disabled or not responding to commands.");
++        goto _CONTINUE_SETUP;
++    }
++
++    // Check that PM table options are supported before adding it to the attr list
++    ret = smu_transfer_table_to_dram(g_driver.device);
++    if (ret == SMU_Return_OK) {
++        ret = smu_get_pm_table_version(g_driver.device, &g_driver.pm_table_version);
++        if (ret != SMU_Return_OK && ret != SMU_Return_Unsupported) {
++            pr_err("Unable to resolve which PM table version the system uses -- disabling "
++                "feature (%d)", ret);
++            goto _CONTINUE_SETUP;
++        }
++
++        g_driver.pm_table = kzalloc(PM_TABLE_MAX_SIZE, GFP_KERNEL);
++        if (g_driver.pm_table == NULL) {
++            pr_err("Unable to allocate kernel buffer for PM table mapping -- disabling PM table "
++                "feature");
++            goto _CONTINUE_SETUP;
++        }
++
++        // Perform an initial fill of the data for when the device is queued, saving time
++        pr_debug("Probing the PM table for state changes");
++        ret = smu_read_pm_table(dev, g_driver.pm_table, &g_driver.pm_table_read_size);
++        if (ret == SMU_Return_OK) {
++            pr_debug("Probe succeeded: read %ld bytes", g_driver.pm_table_read_size);
++
++            drv_attrs[MAX_ATTRS_LEN - 4] = &dev_attr_pm_table_size.attr;
++            drv_attrs[MAX_ATTRS_LEN - 3] = &dev_attr_pm_table.attr;
++
++            if (g_driver.pm_table_version)
++                drv_attrs[MAX_ATTRS_LEN - 2] = &dev_attr_pm_table_version.attr;
++        }
++        else
++            pr_err("Failed to probe the PM table -- disabling feature (%d)", ret);
++    }
++    else {
++        pr_debug("Notice: PM tables are not supported for the current platform (%d)", ret);
++    }
++
++_CONTINUE_SETUP:
++    // Allocate the sysfs attr group with the parameters for use
++    g_driver.drv_kobj = kobject_create_and_add("ryzen_smu_drv", kernel_kobj);
++    if (!g_driver.drv_kobj) {
++        pr_err("Unable to create sysfs interface");
++        return -ENOMEM;
++    }
++
++    if (sysfs_create_group(g_driver.drv_kobj, &drv_attr_group))
++        kobject_put(g_driver.drv_kobj);
++
++    return 0;
++}
++
++static void ryzen_smu_remove(struct pci_dev *dev) {
++    // Free allocated resources as well as the SMU
++    if (g_driver.pm_table)
++        kfree(g_driver.pm_table);
++
++    if (g_driver.drv_kobj)
++        kobject_put(g_driver.drv_kobj);
++
++    smu_cleanup();
++}
++
++static struct pci_device_id ryzen_smu_id_table[] = {
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M10H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M30H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M60H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M00H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M20H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M60H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_MA0H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M10H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M40H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M60H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M70H_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_MI200_ROOT) },
++    { PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_MI300_ROOT) },
++    { }
++};
++MODULE_DEVICE_TABLE(pci, ryzen_smu_id_table);
++
++static struct pci_driver ryzen_smu_driver = {
++    .id_table = ryzen_smu_id_table,
++    .remove = ryzen_smu_remove,
++    .probe = ryzen_smu_probe,
++    .name = KBUILD_MODNAME,
++};
++
++static int __init ryzen_smu_driver_init(void) {
++    // By default the driver will not be used to communicate with the
++    //  northbridge so we forcefully tell the system to use it.
++    if (pci_register_driver(&ryzen_smu_driver) < 0) {
++        pr_err("Failed to register the PCI driver.");
++        return 1;
++    }
++
++    return 0;
++}
++
++static void ryzen_smu_driver_exit(void) {
++    pci_unregister_driver(&ryzen_smu_driver);
++}
++
++module_init(ryzen_smu_driver_init);
++module_exit(ryzen_smu_driver_exit);
++
++module_param(smu_timeout_attempts, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
++MODULE_PARM_DESC(smu_timeout_attempts, "When executing an SMU command, the driver will retry this many times before considering a command to have timed out. Default: 8192");
+diff --git a/drivers/misc/ryzen_smu/smu.c b/drivers/misc/ryzen_smu/smu.c
+new file mode 100755
+index 0000000..e6bf768
+--- /dev/null
++++ b/drivers/misc/ryzen_smu/smu.c
+@@ -0,0 +1,1352 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/* Copyright (C) 2020 Leonardo Gates <leogatesx9r@protonmail.com> */
++/* Ryzen SMU Root Complex Communication */
++
++#include <asm/io.h>
++#include <linux/delay.h>
++#include <linux/module.h>
++#include <linux/pci.h>
++#include <linux/time.h>
++
++#ifdef __has_include
++#if __has_include(<asm/cpuid/api.h>)
++#include <asm/cpuid/api.h>
++#elif __has_include(<asm/cpuid.h>)
++#include <asm/cpuid.h>
++#else
++#include <asm/processor.h>
++#endif
++#else
++#include <asm/processor.h>
++#endif
++
++#include "smu.h"
++
++static struct {
++  enum smu_processor_codename codename;
++
++  // Optional RSMU mailbox addresses.
++  u32 addr_rsmu_mb_cmd;
++  u32 addr_rsmu_mb_rsp;
++  u32 addr_rsmu_mb_args;
++
++  // Mandatory MP1 mailbox addresses.
++  enum smu_if_version mp1_if_ver;
++  u32 addr_mp1_mb_cmd;
++  u32 addr_mp1_mb_rsp;
++  u32 addr_mp1_mb_args;
++
++  u32 addr_hsmp_mb_cmd;
++  u32 addr_hsmp_mb_rsp;
++  u32 addr_hsmp_mb_args;
++
++  // Optional PM table information.
++  u64 pm_dram_base;
++  u32 pm_dram_base_alt;
++  u32 pm_dram_map_size;
++  u32 pm_dram_map_size_alt;
++
++  // Internal tracker to determine the minimum interval required to
++  //  refresh the metrics table.
++  u32 pm_jiffies;
++
++  // Virtual addresses mapped to physical DRAM bases for PM table.
++  u8 __iomem *pm_table_virt_addr;
++  u8 __iomem *pm_table_virt_addr_alt;
++} g_smu = {
++    .codename = CODENAME_UNDEFINED,
++
++    .addr_rsmu_mb_cmd = 0,
++    .addr_rsmu_mb_rsp = 0,
++    .addr_rsmu_mb_args = 0,
++
++    .mp1_if_ver = IF_VERSION_COUNT,
++    .addr_mp1_mb_cmd = 0,
++    .addr_mp1_mb_rsp = 0,
++    .addr_mp1_mb_args = 0,
++
++    .addr_hsmp_mb_cmd = 0,
++    .addr_hsmp_mb_rsp = 0,
++    .addr_hsmp_mb_args = 0,
++
++    .pm_dram_base = 0,
++    .pm_dram_base_alt = 0,
++    .pm_dram_map_size = 0,
++    .pm_dram_map_size_alt = 0,
++    .pm_jiffies = 0,
++
++    .pm_table_virt_addr = NULL,
++    .pm_table_virt_addr_alt = NULL,
++};
++
++// Both mutexes are defined separately because the SMN address space can be used
++//  independently from the SMU but the SMU requires access to the SMN to execute
++//  commands.
++static DEFINE_MUTEX(amd_pci_mutex);
++static DEFINE_MUTEX(amd_smu_mutex);
++
++int smu_smn_rw_address(struct pci_dev *dev, u32 address, u32 *value,
++                       int write) {
++  int err;
++
++  // This may work differently for multi-NUMA systems.
++  mutex_lock(&amd_pci_mutex);
++  err = pci_write_config_dword(dev, SMU_PCI_ADDR_REG, address);
++
++  if (!err) {
++    err = (write ? pci_write_config_dword(dev, SMU_PCI_DATA_REG, *value)
++                 : pci_read_config_dword(dev, SMU_PCI_DATA_REG, value));
++
++    if (err)
++      pr_warn("Error %s SMN address: 0x%x!\n", write ? "writing" : "reading",
++              address);
++  } else
++    pr_warn("Error programming SMN address: 0x%x!\n", address);
++  mutex_unlock(&amd_pci_mutex);
++
++  return err;
++}
++
++enum smu_return_val smu_read_address(struct pci_dev *dev, u32 address,
++                                     u32 *value) {
++  return !smu_smn_rw_address(dev, address, value, 0) ? SMU_Return_OK
++                                                     : SMU_Return_PCIFailed;
++}
++
++enum smu_return_val smu_write_address(struct pci_dev *dev, u32 address,
++                                      u32 value) {
++  return !smu_smn_rw_address(dev, address, &value, 1) ? SMU_Return_OK
++                                                      : SMU_Return_PCIFailed;
++}
++
++void smu_args_init(smu_req_args_t *args, u32 value) {
++  u32 i;
++
++  args->args[0] = value;
++
++  for (i = 1; i < SMU_REQ_MAX_ARGS; i++)
++    args->args[i] = 0;
++}
++
++enum smu_return_val smu_send_command(struct pci_dev *dev, u32 op,
++                                     smu_req_args_t *args,
++                                     enum smu_mailbox mailbox) {
++  u32 retries, tmp, i, rsp_addr, args_addr, cmd_addr;
++
++  // == Pick the correct mailbox address. ==
++  switch (mailbox) {
++  case MAILBOX_TYPE_RSMU:
++    rsp_addr = g_smu.addr_rsmu_mb_rsp;
++    cmd_addr = g_smu.addr_rsmu_mb_cmd;
++    args_addr = g_smu.addr_rsmu_mb_args;
++    break;
++  case MAILBOX_TYPE_MP1:
++    rsp_addr = g_smu.addr_mp1_mb_rsp;
++    cmd_addr = g_smu.addr_mp1_mb_cmd;
++    args_addr = g_smu.addr_mp1_mb_args;
++    break;
++  case MAILBOX_TYPE_HSMP:
++    rsp_addr = g_smu.addr_hsmp_mb_rsp;
++    cmd_addr = g_smu.addr_hsmp_mb_cmd;
++    args_addr = g_smu.addr_hsmp_mb_args;
++    break;
++  default:
++    return SMU_Return_Unsupported;
++  }
++
++  // == In the unlikely event a mailbox is undefined, don't even attempt to
++  // execute. ==
++  if (!rsp_addr || !cmd_addr || !args_addr)
++    return SMU_Return_Unsupported;
++
++  pr_debug(
++      "SMU Service Request: ID(0x%x) Args(0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x)",
++      op, args->s.arg0, args->s.arg1, args->s.arg2, args->s.arg3, args->s.arg4,
++      args->s.arg5);
++
++  mutex_lock(&amd_smu_mutex);
++
++  // Step 1: Wait until the RSP register is non-zero.
++  retries = smu_timeout_attempts;
++  do
++    if (smu_read_address(dev, rsp_addr, &tmp) != SMU_Return_OK) {
++      mutex_unlock(&amd_smu_mutex);
++      pr_warn("Failed to perform initial probe on SMU RSP!\n");
++
++      return SMU_Return_PCIFailed;
++    }
++  while (tmp == 0 && retries--);
++
++  // Step 1.b: A command is still being processed meaning
++  //  a new command cannot be issued.
++  if (!retries && !tmp) {
++    mutex_unlock(&amd_smu_mutex);
++    pr_debug("SMU Service Request Failed: Timeout on initial wait for mailbox "
++             "availability.");
++
++    return SMU_Return_CommandTimeout;
++  }
++
++  // Step 2: Write zero (0) to the RSP register.
++  smu_write_address(dev, rsp_addr, 0);
++
++  // Step 3: Write the argument(s) into the argument register(s).
++  for (i = 0; i < SMU_REQ_MAX_ARGS; i++)
++    smu_write_address(dev, args_addr + (i * 4), args->args[i]);
++
++  // Step 4: Write the message Id into the Message ID register.
++  smu_write_address(dev, cmd_addr, op);
++
++  // Step 5: Wait until the Response register is non-zero.
++  do
++    if (smu_read_address(dev, rsp_addr, &tmp) != SMU_Return_OK) {
++      mutex_unlock(&amd_smu_mutex);
++      pr_warn("Failed to perform probe on SMU RSP!\n");
++
++      return SMU_Return_PCIFailed;
++    }
++  while (tmp == 0 && retries--);
++
++  // Step 6: If the Response register contains OK, then SMU has finished
++  // processing
++  //  the message.
++  if (tmp != SMU_Return_OK && !retries) {
++    mutex_unlock(&amd_smu_mutex);
++
++    // The RSP register is still 0, the SMU is still processing the request or
++    // has frozen. Either way the command has timed out so indicate as such.
++    if (!tmp) {
++      pr_debug("SMU Service Request Failed: Timeout on command (0x%x) after %d "
++               "attempts.",
++               op, smu_timeout_attempts);
++
++      return SMU_Return_CommandTimeout;
++    }
++
++    pr_debug("SMU Service Request Failed: Response %Xh was unexpected.", tmp);
++    return tmp;
++  }
++
++  // Step 7: If a return argument is expected, the Argument register may be read
++  //  at this time.
++  for (i = 0; i < SMU_REQ_MAX_ARGS; i++)
++    if (smu_read_address(dev, args_addr + (i * 4), &args->args[i]) !=
++        SMU_Return_OK)
++      pr_warn("Failed to fetch SMU ARG [%d]!\n", i);
++
++  mutex_unlock(&amd_smu_mutex);
++
++  pr_debug(
++      "SMU Service Response: ID(0x%x) Args(0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x)",
++      op, args->s.arg0, args->s.arg1, args->s.arg2, args->s.arg3, args->s.arg4,
++      args->s.arg5);
++
++  return SMU_Return_OK;
++}
++
++int smu_resolve_cpu_class(struct pci_dev *dev) {
++  u32 cpuid, cpu_family, cpu_model, stepping, pkg_type;
++
++  // https://en.wikichip.org/wiki/amd/cpuid
++  // Res. + ExtFamily + ExtModel + Res. + BaseFamily + BaseModel + Stepping
++  // See: CPUID_Fn00000001_EAX
++  cpuid = cpuid_eax(0x00000001);
++
++  cpu_family = ((cpuid & 0xf00) >> 8) + ((cpuid & 0xff00000) >> 20);
++  cpu_model = ((cpuid & 0xf0000) >> 12) + ((cpuid & 0xf0) >> 4);
++  stepping = cpuid & 0xf;
++
++  // Combines "PkgType" and "Reserved"
++  // See: CPUID_Fn80000001_EBX
++  pkg_type = cpuid_ebx(0x80000001) >> 28;
++
++  pr_info("CPUID: family 0x%X, model 0x%X, stepping 0x%X, package 0x%X",
++          cpu_family, cpu_model, stepping, pkg_type);
++
++  // Zen / Zen+ / Zen2
++  if (cpu_family == 0x17) {
++    switch (cpu_model) {
++    case 0x01:
++      if (pkg_type == 7)
++        g_smu.codename = CODENAME_THREADRIPPER;
++      else if (pkg_type == 4)
++        g_smu.codename = CODENAME_NAPLES;
++      else
++        g_smu.codename = CODENAME_SUMMITRIDGE;
++      break;
++    case 0x08:
++      if (pkg_type == 7 || pkg_type == 4)
++        g_smu.codename = CODENAME_COLFAX;
++      else
++        g_smu.codename = CODENAME_PINNACLERIDGE;
++      break;
++    case 0x11:
++      g_smu.codename = CODENAME_RAVENRIDGE;
++      break;
++    case 0x18:
++      if (pkg_type == 2)
++        g_smu.codename = CODENAME_RAVENRIDGE2;
++      else
++        g_smu.codename = CODENAME_PICASSO;
++      break;
++    case 0x20:
++      g_smu.codename = CODENAME_DALI;
++      break;
++    case 0x31:
++      g_smu.codename = CODENAME_CASTLEPEAK;
++      break;
++    case 0x60:
++      g_smu.codename = CODENAME_RENOIR;
++      break;
++    case 0x68:
++      g_smu.codename = CODENAME_LUCIENNE;
++      break;
++    case 0x71:
++      g_smu.codename = CODENAME_MATISSE;
++      break;
++    case 0x90:
++      g_smu.codename = CODENAME_VANGOGH;
++      break;
++    default:
++      pr_err(
++          "CPUID: Unknown Zen/Zen+/Zen2 processor model: 0x%X (CPUID: 0x%08X)",
++          cpu_model, cpuid);
++      return -2;
++    }
++    return 0;
++  }
++
++  // Zen3 / Zen4
++  // At least from Zen3 onward AMD reserves 16 model IDs per generation
++  // Chagall: 0x00-0x0F, Stormpeak: 0x10-0x1f, etc...
++  // Ryzen Master uses this full reserved range to identify and probe CPUs
++  // unlike us
++  else if (cpu_family == 0x19) {
++    switch (cpu_model) {
++    case 0x01:
++      g_smu.codename = CODENAME_MILAN;
++      break;
++    case 0x08:
++      g_smu.codename = CODENAME_CHAGALL;
++      break;
++    case 0x18:
++      g_smu.codename = CODENAME_STORMPEAK;
++      break;
++    case 0x20:
++    case 0x21:
++      g_smu.codename = CODENAME_VERMEER;
++      break;
++    case 0x40:
++    case 0x44:
++      g_smu.codename = CODENAME_REMBRANDT;
++      break;
++    case 0x50:
++      g_smu.codename = CODENAME_CEZANNE;
++      break;
++    case 0x61:
++      g_smu.codename = CODENAME_RAPHAEL;
++      break;
++    case 0x74:
++      g_smu.codename = CODENAME_PHOENIX;
++      break;
++    case 0x75:
++      g_smu.codename = CODENAME_HAWKPOINT;
++      break;
++    default:
++      pr_err("CPUID: Unknown Zen3/4 processor model: 0x%X (CPUID: 0x%08X)",
++             cpu_model, cpuid);
++      return -2;
++    }
++    return 0;
++  }
++
++  // Zen 5
++  else if (cpu_family == 0x1a) {
++    switch (cpu_model) {
++    case 0x24: // Strix Point (Ryzen AI 9 HX 370, family 0x1A model 0x24)
++      g_smu.codename = CODENAME_STRIXPOINT;
++      break;
++    case 0x44:
++      g_smu.codename = CODENAME_GRANITERIDGE;
++      break;
++    case 0x60: //Strixpoint Ryzen AI 350
++      g_smu.codename = CODENAME_STRIXPOINT;
++      break;
++    case 0x70: // Strix Halo (AI MAX+ 395)
++      g_smu.codename = CODENAME_STRIXHALO;
++      break;
++    default:
++      pr_err("CPUID: Unknown Zen5/6 processor model: 0x%X (CPUID: 0x%08X)",
++             cpu_model, cpuid);
++      return -2;
++    }
++    return 0;
++  }
++
++  else {
++    pr_err("CPUID: failed to detect Zen processor family "
++           "(%Xh).",
++           cpu_family);
++    return -1;
++  }
++}
++
++int smu_init(struct pci_dev *dev) {
++  // This really should never be called twice however in case it is, consider it
++  // initialized.
++  if (g_smu.codename != CODENAME_UNDEFINED)
++    return 0;
++
++  if (smu_resolve_cpu_class(dev))
++    return -ENODEV;
++
++  // Detect RSMU mailbox address.
++  switch (g_smu.codename) {
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MATISSE:
++  case CODENAME_VERMEER:
++  case CODENAME_MILAN:
++  case CODENAME_CHAGALL:
++  case CODENAME_RAPHAEL:
++  case CODENAME_GRANITERIDGE:
++  case CODENAME_STORMPEAK:
++    g_smu.addr_rsmu_mb_cmd = 0x3B10524;
++    g_smu.addr_rsmu_mb_rsp = 0x3B10570;
++    g_smu.addr_rsmu_mb_args = 0x3B10A40;
++    goto LOG_RSMU;
++  case CODENAME_COLFAX:
++  case CODENAME_NAPLES:
++  case CODENAME_SUMMITRIDGE:
++  case CODENAME_THREADRIPPER:
++  case CODENAME_PINNACLERIDGE:
++    g_smu.addr_rsmu_mb_cmd = 0x3B1051C;
++    g_smu.addr_rsmu_mb_rsp = 0x3B10568;
++    g_smu.addr_rsmu_mb_args = 0x3B10590;
++    goto LOG_RSMU;
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  case CODENAME_PICASSO:
++  case CODENAME_CEZANNE:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++  case CODENAME_DALI:
++  case CODENAME_REMBRANDT:
++  case CODENAME_PHOENIX:
++  case CODENAME_STRIXPOINT:
++  case CODENAME_HAWKPOINT:
++  case CODENAME_STRIXHALO:
++    g_smu.addr_rsmu_mb_cmd = 0x3B10A20;
++    g_smu.addr_rsmu_mb_rsp = 0x3B10A80;
++    g_smu.addr_rsmu_mb_args = 0x3B10A88;
++    goto LOG_RSMU;
++  case CODENAME_VANGOGH:
++    pr_debug("RSMU Mailbox: Not supported or unknown, disabling use.");
++    goto MP1_DETECT;
++  default:
++    pr_err("Unknown processor codename: %d", g_smu.codename);
++    return -ENODEV;
++  }
++
++LOG_RSMU:
++  pr_debug("RSMU Mailbox: (cmd: 0x%X, rsp: 0x%X, args: 0x%X)",
++           g_smu.addr_rsmu_mb_cmd, g_smu.addr_rsmu_mb_rsp,
++           g_smu.addr_rsmu_mb_args);
++
++  // Detect HSMP mailbox address.
++  switch (g_smu.codename) {
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MATISSE:
++  case CODENAME_VERMEER:
++  case CODENAME_MILAN:
++  case CODENAME_CHAGALL:
++  case CODENAME_RAPHAEL:
++  case CODENAME_GRANITERIDGE:
++  case CODENAME_STORMPEAK:
++    g_smu.addr_hsmp_mb_cmd = 0x3B10534;
++    g_smu.addr_hsmp_mb_rsp = 0x3B10980;
++    g_smu.addr_hsmp_mb_args = 0x3B109E0;
++    goto LOG_HSMP;
++  case CODENAME_CEZANNE:
++  case CODENAME_COLFAX:
++  case CODENAME_NAPLES:
++  case CODENAME_SUMMITRIDGE:
++  case CODENAME_THREADRIPPER:
++  case CODENAME_PINNACLERIDGE:
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  case CODENAME_PICASSO:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++  case CODENAME_DALI:
++  case CODENAME_VANGOGH:
++  case CODENAME_REMBRANDT:
++  case CODENAME_PHOENIX:
++  case CODENAME_STRIXPOINT:
++  case CODENAME_HAWKPOINT:
++  case CODENAME_STRIXHALO:
++    goto MP1_DETECT;
++  default:
++    pr_err("Unknown processor codename: %d", g_smu.codename);
++    return -ENODEV;
++  }
++
++LOG_HSMP:
++  pr_debug("HSMP Mailbox: (cmd: 0x%X, rsp: 0x%X, args: 0x%X)",
++           g_smu.addr_hsmp_mb_cmd, g_smu.addr_hsmp_mb_rsp,
++           g_smu.addr_hsmp_mb_args);
++
++MP1_DETECT:
++  // Detect MP1 SMU mailbox address.
++  switch (g_smu.codename) {
++  case CODENAME_COLFAX:
++  case CODENAME_NAPLES:
++  case CODENAME_SUMMITRIDGE:
++  case CODENAME_THREADRIPPER:
++  case CODENAME_PINNACLERIDGE:
++    g_smu.mp1_if_ver = IF_VERSION_9;
++    g_smu.addr_mp1_mb_cmd = 0x3B10528;
++    g_smu.addr_mp1_mb_rsp = 0x3B10564;
++    g_smu.addr_mp1_mb_args = 0x3B10598;
++    break;
++  case CODENAME_PICASSO:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++  case CODENAME_DALI:
++    g_smu.mp1_if_ver = IF_VERSION_10;
++    g_smu.addr_mp1_mb_cmd = 0x3B10528;
++    g_smu.addr_mp1_mb_rsp = 0x3B10564;
++    g_smu.addr_mp1_mb_args = 0x3B10998;
++    break;
++  case CODENAME_MATISSE:
++  case CODENAME_VERMEER:
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MILAN:
++  case CODENAME_CHAGALL:
++  case CODENAME_RAPHAEL:
++  case CODENAME_GRANITERIDGE:
++  case CODENAME_STORMPEAK:
++    g_smu.mp1_if_ver = IF_VERSION_11;
++    g_smu.addr_mp1_mb_cmd = 0x3B10530;
++    g_smu.addr_mp1_mb_rsp = 0x3B1057C;
++    g_smu.addr_mp1_mb_args = 0x3B109C4;
++    break;
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  case CODENAME_CEZANNE:
++    g_smu.mp1_if_ver = IF_VERSION_12;
++    g_smu.addr_mp1_mb_cmd = 0x3B10528;
++    g_smu.addr_mp1_mb_rsp = 0x3B10564;
++    g_smu.addr_mp1_mb_args = 0x3B10998;
++    break;
++  case CODENAME_VANGOGH:
++  case CODENAME_REMBRANDT:
++  case CODENAME_PHOENIX:
++  case CODENAME_HAWKPOINT:
++    g_smu.mp1_if_ver = IF_VERSION_13;
++    g_smu.addr_mp1_mb_cmd = 0x3B10528;
++    g_smu.addr_mp1_mb_rsp = 0x3B10578;
++    g_smu.addr_mp1_mb_args = 0x3B10998;
++    break;
++  case CODENAME_STRIXPOINT:
++  case CODENAME_STRIXHALO:
++    g_smu.mp1_if_ver = IF_VERSION_13;
++    g_smu.addr_mp1_mb_cmd = 0x3b10928;
++    g_smu.addr_mp1_mb_rsp = 0x3b10978;
++    g_smu.addr_mp1_mb_args = 0x3b10998;
++    break;
++  default:
++    pr_err("Unknown processor codename: %d", g_smu.codename);
++    return -ENODEV;
++  }
++
++  pr_debug("MP1 Mailbox: (cmd: 0x%X, rsp: 0x%X, args: 0x%X)",
++           g_smu.addr_mp1_mb_cmd, g_smu.addr_mp1_mb_rsp,
++           g_smu.addr_mp1_mb_args);
++
++  pr_info("Family Codename: %s", getCodeName(g_smu.codename));
++
++  return 0;
++}
++
++const char *getCodeName(enum smu_processor_codename codename) {
++  switch (codename) {
++  case CODENAME_COLFAX:
++    return "Colfax";
++  case CODENAME_RENOIR:
++    return "Renoir";
++  case CODENAME_PICASSO:
++    return "Picasso";
++  case CODENAME_MATISSE:
++    return "Matisse";
++  case CODENAME_THREADRIPPER:
++    return "ThreadRipper";
++  case CODENAME_CASTLEPEAK:
++    return "CastelPeak";
++  case CODENAME_RAVENRIDGE:
++    return "RavenRidge";
++  case CODENAME_RAVENRIDGE2:
++    return "RavenRidge2";
++  case CODENAME_SUMMITRIDGE:
++    return "SummitRidge";
++  case CODENAME_PINNACLERIDGE:
++    return "PinnacleRidge";
++  case CODENAME_REMBRANDT:
++    return "Rembrandt";
++  case CODENAME_VERMEER:
++    return "Vermeer";
++  case CODENAME_VANGOGH:
++    return "VanGogh";
++  case CODENAME_CEZANNE:
++    return "Cezanne";
++  case CODENAME_MILAN:
++    return "Milan";
++  case CODENAME_DALI:
++    return "Dali";
++  case CODENAME_LUCIENNE:
++    return "Lucienne";
++  case CODENAME_NAPLES:
++    return "Naples";
++  case CODENAME_CHAGALL:
++    return "Chagall";
++  case CODENAME_RAPHAEL:
++    return "Raphael";
++  case CODENAME_GRANITERIDGE:
++    return "GraniteRidge";
++  case CODENAME_PHOENIX:
++    return "Phoenix";
++  case CODENAME_STRIXPOINT:
++    return "Strix Point";
++  case CODENAME_HAWKPOINT:
++    return "Hawk Point";
++  case CODENAME_STORMPEAK:
++    return "Storm Peak";
++  case CODENAME_STRIXHALO:
++    return "Strix Halo";
++  default:
++    return "Undefined";
++  }
++}
++void smu_cleanup(void) {
++  // Unmap DRAM Base if required after SMU use.
++  if (g_smu.pm_table_virt_addr) {
++    iounmap(g_smu.pm_table_virt_addr);
++    g_smu.pm_table_virt_addr = NULL;
++  }
++
++  if (g_smu.pm_table_virt_addr_alt) {
++    iounmap(g_smu.pm_table_virt_addr_alt);
++    g_smu.pm_table_virt_addr_alt = NULL;
++  }
++
++  // Set SMU state to uninitialized, requiring a call to smu_init() again.
++  g_smu.codename = CODENAME_UNDEFINED;
++}
++
++enum smu_processor_codename smu_get_codename(void) { return g_smu.codename; }
++
++u32 smu_get_version(struct pci_dev *dev, enum smu_mailbox mb) {
++  smu_req_args_t args;
++  u32 ret;
++
++  // First value is always 1.
++  smu_args_init(&args, 1);
++
++  // OP 0x02 is consistent with all platforms meaning
++  //  it can be used directly.
++  ret = smu_send_command(dev, 0x02, &args, mb);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  return args.s.arg0;
++}
++
++enum smu_if_version smu_get_mp1_if_version(void) { return g_smu.mp1_if_ver; }
++
++u64 smu_get_dram_base_address(struct pci_dev *dev) {
++  u32 fn[3], ret, parts[2];
++  smu_req_args_t args;
++
++  const enum smu_mailbox type = MAILBOX_TYPE_RSMU;
++
++  smu_args_init(&args, 0);
++
++  switch (g_smu.codename) {
++  case CODENAME_NAPLES:
++  case CODENAME_SUMMITRIDGE:
++  case CODENAME_THREADRIPPER:
++    fn[0] = 0xa;
++    goto BASE_ADDR_CLASS_1;
++  case CODENAME_VERMEER:
++  case CODENAME_MATISSE:
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MILAN:
++  case CODENAME_CHAGALL:
++    fn[0] = 0x06;
++    goto BASE_ADDR_CLASS_1;
++  case CODENAME_RAPHAEL:
++  case CODENAME_GRANITERIDGE:
++  case CODENAME_STORMPEAK:
++    fn[0] = 0x04;
++    goto BASE_ADDR_CLASS_1;
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  case CODENAME_CEZANNE:
++  case CODENAME_REMBRANDT:
++  case CODENAME_PHOENIX:
++  case CODENAME_STRIXPOINT:
++  case CODENAME_STRIXHALO:
++  case CODENAME_HAWKPOINT:
++    fn[0] = 0x66;
++    goto BASE_ADDR_CLASS_1;
++  case CODENAME_COLFAX:
++  case CODENAME_PINNACLERIDGE:
++    fn[0] = 0x0b;
++    fn[1] = 0x0c;
++    goto BASE_ADDR_CLASS_2;
++  case CODENAME_DALI:
++  case CODENAME_PICASSO:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++    fn[0] = 0x0a;
++    fn[1] = 0x3d;
++    fn[2] = 0x0b;
++    goto BASE_ADDR_CLASS_3;
++  default:
++    return SMU_Return_Unsupported;
++  }
++
++BASE_ADDR_CLASS_1:
++  args.s.arg0 = args.s.arg1 = 1;
++  ret = smu_send_command(dev, fn[0], &args, type);
++
++  return ret != SMU_Return_OK ? ret : args.s.arg0 | ((u64)args.s.arg1 << 32);
++
++BASE_ADDR_CLASS_2:
++  ret = smu_send_command(dev, fn[0], &args, type);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  smu_args_init(&args, 0);
++  ret = smu_send_command(dev, fn[1], &args, type);
++
++  return ret != SMU_Return_OK ? ret : args.s.arg0;
++
++BASE_ADDR_CLASS_3:
++  // == Part 1 ==
++  args.s.arg0 = 3;
++  ret = smu_send_command(dev, fn[0], &args, type);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  smu_args_init(&args, 3);
++  ret = smu_send_command(dev, fn[2], &args, type);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  // 1st Base.
++  parts[0] = args.s.arg0;
++  // == Part 1 End ==
++
++  // == Part 2 ==
++  smu_args_init(&args, 3);
++  ret = smu_send_command(dev, fn[1], &args, type);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  smu_args_init(&args, 5);
++  ret = smu_send_command(dev, fn[0], &args, type);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  smu_args_init(&args, 5);
++  ret = smu_send_command(dev, fn[2], &args, type);
++  if (ret != SMU_Return_OK)
++    return ret;
++
++  // 2nd base.
++  parts[1] = args.s.arg0;
++  // == Part 2 End ==
++
++  return (u64)parts[1] << 32 | parts[0];
++}
++
++enum smu_return_val smu_transfer_table_to_dram(struct pci_dev *dev) {
++  smu_req_args_t args;
++  u32 fn;
++
++  /**
++   * Probes (updates) the PM Table.
++   * SMC Message corresponds to TransferTableSmu2Dram.
++   * Physically mapped at the DRAM Base address(es).
++   */
++
++  // Arg[0] here specifies the PM table when set to 0.
++  // For GPU ASICs, it seems there's more tables that can be found but for CPUs,
++  //  it seems this value is ignored.
++  smu_args_init(&args, 0);
++
++  switch (g_smu.codename) {
++  case CODENAME_SUMMITRIDGE:
++  case CODENAME_THREADRIPPER:
++  case CODENAME_NAPLES:
++    fn = 0x0a;
++    break;
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MATISSE:
++  case CODENAME_VERMEER:
++  case CODENAME_MILAN:
++  case CODENAME_CHAGALL:
++    fn = 0x05;
++    break;
++  case CODENAME_RAPHAEL:
++  case CODENAME_GRANITERIDGE:
++  case CODENAME_STORMPEAK:
++    fn = 0x03;
++    break;
++  case CODENAME_CEZANNE:
++    fn = 0x65;
++    break;
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  case CODENAME_REMBRANDT:
++  case CODENAME_PHOENIX:
++  case CODENAME_STRIXPOINT:
++  case CODENAME_STRIXHALO:
++  case CODENAME_HAWKPOINT:
++    args.s.arg0 = 3;
++    fn = 0x65;
++    break;
++  case CODENAME_COLFAX:
++  case CODENAME_PINNACLERIDGE:
++  case CODENAME_PICASSO:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++    args.s.arg0 = 3;
++    fn = 0x3d;
++    break;
++  default:
++    return SMU_Return_Unsupported;
++  }
++
++  return smu_send_command(dev, fn, &args, MAILBOX_TYPE_RSMU);
++}
++
++enum smu_return_val smu_transfer_2nd_table_to_dram(struct pci_dev *dev) {
++  smu_req_args_t args;
++  u32 fn;
++
++  /**
++   * Probes (updates) the secondary PM Table.
++   * SMC Message corresponds to TransferTableSmu2Dram.
++   * Physically mapped at the DRAM Base address(es).
++   */
++
++  // Arg[0] here specifies the PM table when set to 0.
++  // For GPU ASICs, it seems there's more tables that can be found but for CPUs,
++  //  it seems this value is ignored.
++  smu_args_init(&args, 0);
++
++  switch (g_smu.codename) {
++  case CODENAME_COLFAX:
++  case CODENAME_PINNACLERIDGE:
++  case CODENAME_PICASSO:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++    args.s.arg0 = 5;
++    fn = 0x3d;
++    break;
++  case CODENAME_SUMMITRIDGE:
++  case CODENAME_THREADRIPPER:
++  case CODENAME_NAPLES:
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MATISSE:
++  case CODENAME_VERMEER:
++  case CODENAME_MILAN:
++  case CODENAME_CEZANNE:
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  default:
++    return SMU_Return_Unsupported;
++  }
++
++  return smu_send_command(dev, fn, &args, MAILBOX_TYPE_RSMU);
++}
++
++enum smu_return_val smu_get_pm_table_version(struct pci_dev *dev,
++                                             u32 *version) {
++  enum smu_return_val ret;
++  smu_req_args_t args;
++  u32 fn;
++
++  /**
++   * For some codenames, there are different PM tables for each chip.
++   * SMC Message corresponds to TableVersionId.
++   * Based on AGESA FW revision.
++   */
++  switch (g_smu.codename) {
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_PICASSO:
++    fn = 0x0c;
++    break;
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MATISSE:
++  case CODENAME_VERMEER:
++  case CODENAME_MILAN:
++  case CODENAME_CHAGALL:
++    fn = 0x08;
++    break;
++  case CODENAME_RAPHAEL:
++  case CODENAME_GRANITERIDGE:
++  case CODENAME_STORMPEAK:
++    fn = 0x05;
++    break;
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++  case CODENAME_CEZANNE:
++  case CODENAME_REMBRANDT:
++  case CODENAME_PHOENIX:
++  case CODENAME_STRIXPOINT:
++  case CODENAME_STRIXHALO:
++  case CODENAME_HAWKPOINT:
++    fn = 0x06;
++    break;
++  default:
++    return SMU_Return_Unsupported;
++  }
++
++  smu_args_init(&args, 0);
++
++  ret = smu_send_command(dev, fn, &args, MAILBOX_TYPE_RSMU);
++  *version = args.s.arg0;
++
++  return ret;
++}
++
++u32 smu_update_pmtable_size(u32 version) {
++  // These sizes are actually accurate and not just "guessed".
++  // Source: Ryzen Master.
++  switch (g_smu.codename) {
++  case CODENAME_CASTLEPEAK:
++  case CODENAME_MATISSE:
++    switch (version) {
++    case 0x240003:
++      g_smu.pm_dram_map_size = 0x18AC;
++      break;
++    case 0x240503:
++      g_smu.pm_dram_map_size = 0xD7C;
++      break;
++    case 0x240603:
++      g_smu.pm_dram_map_size = 0xAB0;
++      break;
++    case 0x240703:
++      g_smu.pm_dram_map_size = 0x7E4;
++      break;
++    case 0x240802:
++      g_smu.pm_dram_map_size = 0x7E0;
++      break;
++    case 0x240803:
++      g_smu.pm_dram_map_size = 0x7E4;
++      break;
++    case 0x240902:
++      g_smu.pm_dram_map_size = 0x514;
++      break;
++    case 0x240903:
++      g_smu.pm_dram_map_size = 0x518;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_VERMEER:
++  case CODENAME_CHAGALL:
++    switch (version) {
++    case 0x2D0803:
++      g_smu.pm_dram_map_size = 0x894;
++      break;
++    case 0x2D0903:
++      g_smu.pm_dram_map_size = 0x594;
++      break;
++    case 0x380005:
++      g_smu.pm_dram_map_size = 0x1BB0;
++      break;
++    case 0x380505:
++      g_smu.pm_dram_map_size = 0xF30;
++      break;
++    case 0x380605:
++      g_smu.pm_dram_map_size = 0xC10;
++      break;
++    case 0x380705:
++      g_smu.pm_dram_map_size = 0x8F0;
++      break;
++    case 0x380804:
++      g_smu.pm_dram_map_size = 0x8A4;
++      break;
++    case 0x380805:
++      g_smu.pm_dram_map_size = 0x8F0;
++      break;
++    case 0x380904:
++      g_smu.pm_dram_map_size = 0x5A4;
++      break;
++    case 0x380905:
++      g_smu.pm_dram_map_size = 0x5D0;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_MILAN:
++    switch (version) {
++    case 0x2D0008: // Don't exist in RM.
++      g_smu.pm_dram_map_size = 0x1AB0;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_RENOIR:
++  case CODENAME_LUCIENNE:
++    switch (version) {
++    case 0x370000:
++      g_smu.pm_dram_map_size = 0x794;
++      break;
++    case 0x370001:
++      g_smu.pm_dram_map_size = 0x884;
++      break;
++    case 0x370002:
++      g_smu.pm_dram_map_size = 0x88C;
++      break;
++    case 0x370003:
++      g_smu.pm_dram_map_size = 0x8AC;
++      break;
++    case 0x370005:
++      g_smu.pm_dram_map_size = 0x8C8;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_CEZANNE:
++    switch (version) {
++    case 0x400005:
++      g_smu.pm_dram_map_size = 0x944;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_REMBRANDT:
++    switch (version) {
++    case 0x450004:
++      g_smu.pm_dram_map_size = 0xAA4;
++      break;
++    case 0x450005:
++      g_smu.pm_dram_map_size = 0xAB0;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_PICASSO:
++  case CODENAME_RAVENRIDGE:
++  case CODENAME_RAVENRIDGE2:
++    // These codenames have two PM tables, a larger (primary) one and a smaller
++    // one. The size is always fixed to 0x608 and 0xA4 bytes each. Source: Ryzen
++    // Master.
++    g_smu.pm_dram_map_size_alt = 0xA4;
++    g_smu.pm_dram_map_size = 0x608 + g_smu.pm_dram_map_size_alt;
++
++    // Split DRAM base into high/low values.
++    g_smu.pm_dram_base_alt = g_smu.pm_dram_base >> 32;
++    g_smu.pm_dram_base &= 0xFFFFFFFF;
++    break;
++  case CODENAME_RAPHAEL:
++    switch (version) {
++    case 0x000400: // Some ES-time table? Don't exist in RM.
++      g_smu.pm_dram_map_size = 0x948;
++      break;
++    case 0x540000:
++      g_smu.pm_dram_map_size = 0x828;
++      break;
++    case 0x540001:
++      g_smu.pm_dram_map_size = 0x82C;
++      break;
++    case 0x540002:
++      g_smu.pm_dram_map_size = 0x87C;
++      break;
++    case 0x540003:
++      g_smu.pm_dram_map_size = 0x89C;
++      break;
++    case 0x540004:
++      g_smu.pm_dram_map_size = 0x8BC;
++      break;
++    case 0x540005:
++      g_smu.pm_dram_map_size = 0x8C8;
++      break;
++    case 0x540100:
++      g_smu.pm_dram_map_size = 0x618;
++      break;
++    case 0x540101:
++      g_smu.pm_dram_map_size = 0x61C;
++      break;
++    case 0x540102:
++      g_smu.pm_dram_map_size = 0x66C;
++      break;
++    case 0x540103:
++      g_smu.pm_dram_map_size = 0x68C;
++      break;
++    case 0x540104:
++      g_smu.pm_dram_map_size = 0x6A8;
++      break;
++    case 0x540105:
++      g_smu.pm_dram_map_size = 0x6B4;
++      break;
++    case 0x540108:
++      g_smu.pm_dram_map_size = 0x6BC;
++      break;
++    case 0x540208:
++      g_smu.pm_dram_map_size = 0x8D0;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_GRANITERIDGE:
++    switch (version) {
++    case 0x620105:
++      g_smu.pm_dram_map_size = 0x724;
++      break;
++    case 0x620205:
++      g_smu.pm_dram_map_size = 0x994;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_PHOENIX:
++  case CODENAME_HAWKPOINT:
++    switch (version) {
++    case 0x4C0003:
++      g_smu.pm_dram_map_size = 0xB18;
++      break;
++    case 0x4C0004:
++      g_smu.pm_dram_map_size = 0xB1C;
++      break;
++    case 0x4C0005:
++      g_smu.pm_dram_map_size = 0xAF8;
++      break;
++    case 0x4C0006:
++      g_smu.pm_dram_map_size = 0xAFC;
++      break;
++    case 0x4C0007:
++      g_smu.pm_dram_map_size = 0xB00;
++      break;
++    case 0x4C0008:
++      g_smu.pm_dram_map_size = 0xAF0;
++      break;
++    case 0x4C0009:
++      g_smu.pm_dram_map_size = 0xB00;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_STRIXPOINT:
++    switch (version) {
++    case 0x5D0008:
++    case 0x5D0009: // Ryzen PRO / Ryzen AI 9 HX 370 (Strix Point, verified pm_table_version=0x5D0009, pm_table_size=0xD54)
++      g_smu.pm_dram_map_size = 0xD54;
++      break;
++    case 0x650007: // Ryzen AI 7 350 variant
++      g_smu.pm_dram_map_size = 0xD54;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_STRIXHALO:
++    switch (version) {
++    // 0x64010C is the ONEXPLAYER X2Mini PRO (Ryzen AI MAX+ 388, SMU
++    // v10.100.6.0). It differs from 0x64020C only in the middle byte and takes
++    // the same size, which is not published by AMD and was validated on
++    // hardware: after writing distinct limits via MP1 messages 0x14/0x15/0x16,
++    // the stapm/fast/slow floats at offsets 0x0/0x8/0x10 read them back.
++    case 0x64010C:
++    case 0x64020C:
++      g_smu.pm_dram_map_size = 0xE50;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  case CODENAME_STORMPEAK:
++    switch (version) {
++    case 0x5C0002:
++      g_smu.pm_dram_map_size = 0x1E3C;
++      break;
++    case 0x5C0003:
++      g_smu.pm_dram_map_size = 0x1E48;
++      break;
++    case 0x5C0102:
++      g_smu.pm_dram_map_size = 0x1A14;
++      break;
++    case 0x5C0103:
++      g_smu.pm_dram_map_size = 0x1A20;
++      break;
++    case 0x5C0202:
++      g_smu.pm_dram_map_size = 0x15EC;
++      break;
++    case 0x5C0203:
++      g_smu.pm_dram_map_size = 0x15F8;
++      break;
++    case 0x5C0302:
++      g_smu.pm_dram_map_size = 0xD9C;
++      break;
++    case 0x5C0303:
++      g_smu.pm_dram_map_size = 0xDA8;
++      break;
++    case 0x5C0402:
++      g_smu.pm_dram_map_size = 0x974;
++      break;
++    case 0x5C0403:
++      g_smu.pm_dram_map_size = 0x980;
++      break;
++    default:
++      goto UNKNOWN_PM_TABLE_VERSION;
++    }
++    break;
++  default:
++  UNKNOWN_PM_TABLE_VERSION:
++    return SMU_Return_Unsupported;
++  }
++
++  return SMU_Return_OK;
++}
++
++enum smu_return_val smu_read_pm_table(struct pci_dev *dev, unsigned char *dst,
++                                      size_t *len) {
++  u32 ret, version, size;
++
++  // The DRAM base does not change after boot meaning it only needs to be
++  //  fetched once.
++  // From testing, it also seems they are always mapped to the same address as
++  // well,
++  //  at least when running the same AGESA version.
++  if (g_smu.pm_dram_base == 0 || g_smu.pm_dram_map_size == 0) {
++    g_smu.pm_dram_base = smu_get_dram_base_address(dev);
++
++    // Verify returned value isn't an SMU return value.
++    if (g_smu.pm_dram_base < 0xFF && g_smu.pm_dram_base >= 0) {
++      pr_err("Unable to receive the DRAM base address: %X",
++             (u8)g_smu.pm_dram_base);
++      return g_smu.pm_dram_base;
++    }
++
++    // Should help us catch where we missed table version initialization in the
++    // future.
++    version = 0xDEADC0DE;
++
++    // These models require finding the PM table version to determine its size.
++    if (g_smu.codename == CODENAME_VERMEER ||
++        g_smu.codename == CODENAME_MATISSE ||
++        g_smu.codename == CODENAME_RAPHAEL ||
++        g_smu.codename == CODENAME_GRANITERIDGE ||
++        g_smu.codename == CODENAME_RENOIR ||
++        g_smu.codename == CODENAME_LUCIENNE ||
++        g_smu.codename == CODENAME_REMBRANDT ||
++        g_smu.codename == CODENAME_PHOENIX ||
++        g_smu.codename == CODENAME_STRIXPOINT ||
++        g_smu.codename == CODENAME_STRIXHALO ||
++        g_smu.codename == CODENAME_CEZANNE ||
++        g_smu.codename == CODENAME_CHAGALL ||
++        g_smu.codename == CODENAME_MILAN ||
++        g_smu.codename == CODENAME_HAWKPOINT ||
++        g_smu.codename == CODENAME_STORMPEAK) {
++      ret = smu_get_pm_table_version(dev, &version);
++
++      if (ret != SMU_Return_OK) {
++        pr_err("Failed to get PM Table version with error: %X\n", ret);
++        return ret;
++      }
++    }
++
++    ret = smu_update_pmtable_size(version);
++    if (ret != SMU_Return_OK) {
++      pr_err("Unknown PM table version: 0x%08X", version);
++      return ret;
++    }
++
++    pr_debug("Determined PM mapping size as (%xh,%xh) bytes.",
++             g_smu.pm_dram_map_size, g_smu.pm_dram_map_size_alt);
++  }
++
++  // Validate output buffer size.
++  // N.B. In the case of Picasso/RavenRidge 2, we include the secondary PM Table
++  // size as well
++  if (*len < g_smu.pm_dram_map_size) {
++    pr_warn(
++        "Insufficient buffer size for PM table read: %lu < %d version: 0x%X",
++        *len, g_smu.pm_dram_map_size, version);
++
++    *len = g_smu.pm_dram_map_size;
++    return SMU_Return_InsufficientSize;
++  }
++
++  // Clamp output size
++  *len = g_smu.pm_dram_map_size;
++
++  // Check if we should tell the SMU to refresh the table via jiffies.
++  // Use a minimum interval of 1 ms.
++  if (!g_smu.pm_jiffies ||
++      time_after(jiffies, g_smu.pm_jiffies + msecs_to_jiffies(1))) {
++    g_smu.pm_jiffies = jiffies;
++
++    ret = smu_transfer_table_to_dram(dev);
++    if (ret != SMU_Return_OK)
++      return ret;
++
++    if (g_smu.pm_dram_map_size_alt) {
++      ret = smu_transfer_2nd_table_to_dram(dev);
++      if (ret != SMU_Return_OK)
++        return ret;
++    }
++  }
++
++  // Primary PM Table size
++  size = g_smu.pm_dram_map_size - g_smu.pm_dram_map_size_alt;
++
++  // We only map the DRAM base(s) once for use.
++  if (g_smu.pm_table_virt_addr == NULL) {
++    // From Linux documentation, it seems we should use _cache() for ioremap().
++    g_smu.pm_table_virt_addr = ioremap_cache(g_smu.pm_dram_base, size);
++
++    if (g_smu.pm_table_virt_addr == NULL) {
++      pr_err("Failed to map DRAM base: %llX (0x%X B)", g_smu.pm_dram_base,
++             size);
++      return SMU_Return_MappedError;
++    }
++
++    // In Picasso/RavenRidge 2, we map the secondary (high) address as well.
++    if (g_smu.pm_dram_map_size_alt) {
++      g_smu.pm_table_virt_addr_alt =
++          ioremap_cache(g_smu.pm_dram_base_alt, g_smu.pm_dram_map_size_alt);
++
++      if (g_smu.pm_table_virt_addr_alt == NULL) {
++        pr_err("Failed to map DRAM alt base: %X (0x%X B)",
++               g_smu.pm_dram_base_alt, g_smu.pm_dram_map_size_alt);
++        return SMU_Return_MappedError;
++      }
++    }
++  }
++
++  // memcpy() seems to work as well but according to Linux, for physically
++  // mapped addresses,
++  //  we should use _fromio().
++  memcpy_fromio(dst, g_smu.pm_table_virt_addr, size);
++
++  // Append secondary table if required.
++  if (g_smu.pm_dram_map_size_alt)
++    memcpy_fromio(dst + size, g_smu.pm_table_virt_addr_alt,
++                  g_smu.pm_dram_map_size_alt);
++
++  return SMU_Return_OK;
++}
+diff --git a/drivers/misc/ryzen_smu/smu.h b/drivers/misc/ryzen_smu/smu.h
+new file mode 100755
+index 0000000..c21bf45
+--- /dev/null
++++ b/drivers/misc/ryzen_smu/smu.h
+@@ -0,0 +1,225 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/* Copyright (C) 2020 Leonardo Gates <leogatesx9r@protonmail.com> */
++/* Ryzen SMU Root Complex Communication */
++
++#ifndef __SMU_H__
++#define __SMU_H__
++
++#include <linux/pci.h>
++#include <linux/printk.h>
++
++/* Redefine output format for nicer formatting. */
++#ifdef pr_fmt
++    #undef pr_fmt
++#endif
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++
++/**
++ * Controls the processor via the SMU (System Management Unit).
++ * Allows users to set or retrieve various configurations and
++ *  limitations of the processor.
++ */
++
++/* Maximum size in bytes, of the PM table for any processor codename. */
++#define PM_TABLE_MAX_SIZE                             0x1AB0
++
++/* Specifies the amount of attempts an of polling the SMU for a command response till it fails. */
++#define SMU_RETRIES_MAX                               32768
++#define SMU_RETRIES_MIN                               500
++
++/* PCI Query Registers. [0x60, 0x64] & [0xB4, 0xB8] also work. These may be arch-specific. */
++#define SMU_PCI_ADDR_REG                              0xC4
++#define SMU_PCI_DATA_REG                              0xC8
++
++/* Maximum number of 32-bit arguments an SMU command shall have. */
++#define SMU_REQ_MAX_ARGS                              6
++
++/**
++ * Return values that can be sent from the SMU in response to a command.
++ */
++enum smu_return_val {
++    SMU_Return_OK                = 0x01,
++    SMU_Return_Failed            = 0xFF,
++    SMU_Return_UnknownCmd        = 0xFE,
++    SMU_Return_CmdRejectedPrereq = 0xFD,
++    SMU_Return_CmdRejectedBusy   = 0xFC,
++
++    // Custom Error Code -- Does not exist in SMU.
++
++    // SMU Management failed to respond within the SMU_TIMEOUT_MS range.
++    SMU_Return_CommandTimeout    = 0xFB,
++    // An invalid argument was sent to the function.
++    SMU_Return_InvalidArgument   = 0xFA,
++    // Function is unsupported on the current processor.
++    SMU_Return_Unsupported       = 0xF9,
++    // Insufficient buffer size specified.
++    SMU_Return_InsufficientSize  = 0xF8,
++    // Failed to map physical address.
++    SMU_Return_MappedError       = 0xF7,
++    // PCIe programming error.
++    SMU_Return_PCIFailed         = 0xF6,
++};
++
++/**
++ * Supported processor codenames with SMU capabilities.
++ */
++enum smu_processor_codename {
++    CODENAME_UNDEFINED,
++    CODENAME_COLFAX,
++    CODENAME_RENOIR,
++    CODENAME_PICASSO,
++    CODENAME_MATISSE,
++    CODENAME_THREADRIPPER,
++    CODENAME_CASTLEPEAK,
++    CODENAME_RAVENRIDGE,
++    CODENAME_RAVENRIDGE2,
++    CODENAME_SUMMITRIDGE,
++    CODENAME_PINNACLERIDGE,
++    CODENAME_REMBRANDT,
++    CODENAME_VERMEER,
++    CODENAME_VANGOGH,
++    CODENAME_CEZANNE,
++    CODENAME_MILAN,
++    CODENAME_DALI,
++    CODENAME_LUCIENNE,
++    CODENAME_NAPLES,
++    CODENAME_CHAGALL,
++    CODENAME_RAPHAEL,
++    CODENAME_PHOENIX,
++    CODENAME_STRIXPOINT,
++    CODENAME_GRANITERIDGE,
++    CODENAME_HAWKPOINT,
++    CODENAME_STORMPEAK,
++    CODENAME_STRIXHALO,
++    CODENAME_COUNT
++};
++
++/**
++ * SMU MP1 Interface Version [v9-v13]
++ */
++enum smu_if_version {
++    IF_VERSION_9,
++    IF_VERSION_10,
++    IF_VERSION_11,
++    IF_VERSION_12,
++    IF_VERSION_13,
++
++    IF_VERSION_COUNT
++};
++
++/**
++ * SMU Mailbox Target
++ */
++enum smu_mailbox {
++    MAILBOX_TYPE_RSMU,
++    MAILBOX_TYPE_MP1,
++    MAILBOX_TYPE_HSMP,
++
++    MAILBOX_TYPE_COUNT
++};
++
++/**
++ * SMU Service Request Arguments
++ */
++typedef union {
++    struct {
++        u32 arg0;
++        u32 arg1;
++        u32 arg2;
++        u32 arg3;
++        u32 arg4;
++        u32 arg5;
++    }   s;
++    u32 args[SMU_REQ_MAX_ARGS];
++} smu_req_args_t;
++
++/* Parameters for SMU execution. */
++extern uint smu_timeout_attempts;
++
++/**
++ * Initializes for SMU use. MUST be called before using any function.
++ *
++ * Returns 0 on success, anything else on failure.
++ */
++int smu_init(struct pci_dev* dev);
++
++/**
++ * Cleans up the allocated objects after use.
++ */
++void smu_cleanup(void);
++
++/**
++ * Returns the running processor's detected code name.
++ */
++enum smu_processor_codename smu_get_codename(void);
++
++/**
++ * Returns the running processor's detected code name as a fridnly string.
++ */
++const char* getCodeName(enum smu_processor_codename codename);
++
++/**
++ * Reads or writes 32 bit words to the SMU on the root NB PCI device.
++ *
++ * Returns an smu_return_val indicating the status of the operation.
++ */
++enum smu_return_val smu_read_address(struct pci_dev* dev, u32 address, u32* value);
++enum smu_return_val smu_write_address(struct pci_dev* dev, u32 address, u32 value);
++
++/**
++ * Initializes an SMU REQ ARG structure with zeros.
++ * The argument [value] is set as the first argument set for the request.
++ */
++void smu_args_init(smu_req_args_t* args, u32 value);
++
++/**
++ * Performs an SMU service request with the specified arguments. [op] provides an 8-bit command ID,
++ *   [args] specifies up to 6 command arguments that may be used and [mailbox] specifies the
++ *   destination.
++ *
++ * Results are returned in the args array upon a service request being completed.
++ *
++ * Returns an smu_return_val indicating the status of the operation.
++ */
++enum smu_return_val smu_send_command(struct pci_dev* dev, u32 op, smu_req_args_t* args,
++    enum smu_mailbox mailbox);
++
++/**
++ * Returns the current SMU firmware version from the specified mailbox.
++ */
++u32 smu_get_version(struct pci_dev* dev, enum smu_mailbox mb);
++
++/**
++ * Returns the interface version of the MP1 mailbox.
++ */
++enum smu_if_version smu_get_mp1_if_version(void);
++
++/**
++ * Commands the SMU to update the PM table mapped at the DRAM base address.
++ *
++ * Returns an smu_return_val indicating the status of the operation.
++ */
++enum smu_return_val smu_transfer_table_to_dram(struct pci_dev* dev);
++enum smu_return_val smu_transfer_2nd_table_to_dram(struct pci_dev *dev);
++
++/**
++ * For Matisse and Renoir processors, returns a numeric value indicating the format
++ *  of the PM table.
++ *
++ * Returns an smu_return_val indicating the status of the operation.
++ */
++enum smu_return_val smu_get_pm_table_version(struct pci_dev* dev, u32* version);
++
++/**
++ * Reads the PM table for the current CPU, if supported, into the destination buffer.
++ *
++ * Returns an smu_return_val indicating the status of the operation.
++ */
++enum smu_return_val smu_read_pm_table(struct pci_dev* dev, unsigned char* dst, size_t* len);
++
++int smu_smn_rw_address(struct pci_dev *dev, u32 address, u32 *value, int write);
++int smu_resolve_cpu_class(struct pci_dev *dev);
++u64 smu_get_dram_base_address(struct pci_dev *dev);
++u32 smu_update_pmtable_size(u32 version);
++
++#endif /* __SMU_H__ */

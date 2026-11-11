@@ -113,6 +113,7 @@ cp "$base_config" "$source_tree/.config"
 	--set-str LOCALVERSION "$local_version" \
 	--disable LOCALVERSION_AUTO \
 	--enable HIBERNATION_ALLOW_LOCKDOWN \
+	--module RYZEN_SMU \
 	--set-str SYSTEM_TRUSTED_KEYS "" \
 	--set-str SYSTEM_REVOCATION_KEYS ""
 
