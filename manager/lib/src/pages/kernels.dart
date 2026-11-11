@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app_state.dart';
+import '../theme.dart';
 import '../widgets/core.dart';
 
 class KernelsPage extends StatefulWidget {
@@ -87,7 +88,20 @@ class _KernelsPageState extends State<KernelsPage> {
     final unavailable =
         manager.backendConnection == BackendConnection.loading ||
             manager.backendConnection == BackendConnection.error;
-    final kernelReleaseChecking = manager.updater.checkServiceActive;
+    final updater = manager.updater;
+    final releaseCheckStatus = updater.lastCheckStatus;
+    final releaseDownloading =
+        updater.checkServiceActive && releaseCheckStatus == 'downloading';
+    final releaseVerifying = updater.checkServiceActive &&
+        const {
+          'verifying-manifest',
+          'verifying-packages',
+          'authorizing-version',
+        }.contains(releaseCheckStatus);
+    final releasePreparing =
+        const {'verified', 'already-staged'}.contains(releaseCheckStatus);
+    final kernelReleaseChecking =
+        updater.checkServiceActive && !releaseDownloading && !releaseVerifying;
     final managerUpdate = manager.managerUpdate;
     final managerUpdateValue = switch (managerUpdate.state) {
       ManagerUpdateState.current => t.text('kernels.upToDate'),
@@ -236,22 +250,36 @@ class _KernelsPageState extends State<KernelsPage> {
           ),
           const SizedBox(height: 12),
           if (available.isEmpty)
-            StatusRow(
-              key: const ValueKey('kernel-release-status'),
-              label: t.text('kernels.releaseStatus'),
-              value: Text(t.text(
-                kernelReleaseChecking
-                    ? 'common.checkingStatus'
-                    : 'kernels.upToDate',
-              )),
-              status:
-                  kernelReleaseChecking ? StatusKind.loading : StatusKind.ok,
-              description: t.text(
-                kernelReleaseChecking
-                    ? 'kernels.releaseCheckingDescription'
-                    : 'kernels.noNewRelease',
-              ),
-            )
+            if (releaseDownloading)
+              KernelReleaseDownloadRow(updater: updater)
+            else
+              StatusRow(
+                key: const ValueKey('kernel-release-status'),
+                label: t.text('kernels.releaseStatus'),
+                value: Text(t.text(
+                  releaseVerifying
+                      ? 'kernels.releaseVerifying'
+                      : releasePreparing
+                          ? 'kernels.releasePreparingInstall'
+                          : kernelReleaseChecking
+                              ? 'common.checkingStatus'
+                              : 'kernels.upToDate',
+                )),
+                status: kernelReleaseChecking ||
+                        releaseVerifying ||
+                        releasePreparing
+                    ? StatusKind.loading
+                    : StatusKind.ok,
+                description: t.text(
+                  releaseVerifying
+                      ? 'kernels.releaseVerifyingDescription'
+                      : releasePreparing
+                          ? 'kernels.releasePreparingInstallDescription'
+                          : kernelReleaseChecking
+                              ? 'kernels.releaseCheckingDescription'
+                              : 'kernels.noNewRelease',
+                ),
+              )
           else
             for (var index = 0; index < available.length; index++) ...[
               StatusRow(
@@ -274,6 +302,93 @@ class _KernelsPageState extends State<KernelsPage> {
               ),
               if (index != available.length - 1) const SizedBox(height: 12),
             ],
+        ],
+      ),
+    );
+  }
+}
+
+class KernelReleaseDownloadRow extends StatelessWidget {
+  const KernelReleaseDownloadRow({required this.updater, super.key});
+
+  final UpdateControllerStatus updater;
+
+  static String _mebibytes(int bytes) => (bytes / 1048576).toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.t;
+    final downloaded = updater.downloadedBytes;
+    final total = updater.totalBytes;
+    final progress = downloaded != null && total != null && total > 0
+        ? (downloaded / total).clamp(0.0, 1.0)
+        : null;
+    final percent =
+        progress == null ? null : (progress * 100).toStringAsFixed(0);
+    final progressText = downloaded != null && total != null
+        ? t.text('kernels.releaseDownloadProgress', {
+            'downloaded': _mebibytes(downloaded),
+            'total': _mebibytes(total),
+            'percent': percent ?? '-',
+          })
+        : null;
+    final asset = updater.currentAsset;
+    final details = [
+      progressText,
+      asset == null
+          ? null
+          : t.text('kernels.releaseDownloadingAsset', {'asset': asset}),
+    ].whereType<String>().join(' · ');
+    return AppCard(
+      key: const ValueKey('kernel-release-download'),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: StatusGlyph(StatusKind.loading),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '${t.text('kernels.releaseStatus')}:',
+                      style: TextStyle(
+                        color: context.palette.textStrong,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      t.text('kernels.releaseDownloading'),
+                      style: TextStyle(
+                        color: context.palette.textMedium,
+                        fontFamily: 'Ubuntu',
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(value: progress),
+                if (details.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    details,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

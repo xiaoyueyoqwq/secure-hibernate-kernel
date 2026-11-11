@@ -276,6 +276,13 @@
     "publishedRelease": "Published {date} with a verified project signature.",
     "releaseStatus": "Release Status",
     "releaseCheckingDescription": "Downloading and verifying the latest project kernel Release.",
+    "releaseDownloading": "Downloading",
+    "releaseVerifying": "Verifying",
+    "releasePreparingInstall": "Ready to install",
+    "releaseDownloadProgress": "{downloaded} / {total} MB ({percent}%)",
+    "releaseDownloadingAsset": "Downloading {asset}",
+    "releaseVerifyingDescription": "Verifying the downloaded kernel packages and Release signatures.",
+    "releasePreparingInstallDescription": "Download verified. Preparing the install action.",
     "upToDate": "Up to Date",
     "noNewRelease": "No newer verified Ubuntu ABI release is available."
   },

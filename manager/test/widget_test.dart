@@ -1117,11 +1117,67 @@ void main() {
       const ValueKey('kernel-release-status'),
     );
     expect(
-      find.descendant(of: releaseStatus, matching: find.text('Checking')),
+      find.descendant(of: releaseStatus, matching: find.text('Verifying')),
       findsOneWidget,
     );
     expect(
       find.descendant(of: releaseStatus, matching: find.text('Up to Date')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('kernel page shows download progress during release download',
+      (tester) async {
+    final translations = _translations ?? await TranslationCatalog.load();
+    _translations = translations;
+    final manager = ManagerController(translations);
+    addTearDown(manager.dispose);
+    manager.kernels = const [
+      KernelInfo(
+        id: 'active',
+        version: '7.0.12-29-hibernate',
+        project: true,
+        status: KernelStatus.active,
+      ),
+    ];
+    manager.updater = testUpdaterStatus(
+      status: 'downloading',
+      checkServiceActive: true,
+      downloadedBytes: 134217728,
+      totalBytes: 268435456,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildManagerTheme(Brightness.light),
+        home: ManagerScope(
+          controller: manager,
+          child: const SingleChildScrollView(child: KernelsPage()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final downloadRow = find.byKey(
+      const ValueKey('kernel-release-download'),
+    );
+    expect(downloadRow, findsOneWidget);
+    expect(
+      find.descendant(
+        of: downloadRow,
+        matching: find.byType(LinearProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: downloadRow,
+        matching: find.text('128.0 / 256.0 MB (50%)'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('kernel-release-status')),
       findsNothing,
     );
   });

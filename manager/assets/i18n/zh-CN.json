@@ -276,6 +276,13 @@
     "publishedRelease": "发布于 {date}，项目签名已验证。",
     "releaseStatus": "发行状态",
     "releaseCheckingDescription": "正在下载并验证最新的项目内核 Release。",
+    "releaseDownloading": "正在下载",
+    "releaseVerifying": "正在验证",
+    "releasePreparingInstall": "准备安装",
+    "releaseDownloadProgress": "{downloaded} / {total} MB（{percent}%）",
+    "releaseDownloadingAsset": "正在下载 {asset}",
+    "releaseVerifyingDescription": "正在验证下载的内核包与 Release 签名。",
+    "releasePreparingInstallDescription": "下载已验证，正在准备安装操作。",
     "upToDate": "已是最新",
     "noNewRelease": "没有更新的已验证 Ubuntu ABI 发行版本。"
   },
