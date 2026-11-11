@@ -99,7 +99,9 @@
   `scripts/patch-tags.sh` derives the tags from `patches/NNNN-<tag>-*.patch`
   file names; the special tag `hibernate` stays at the end. When Ubuntu
   backports a guarded patch upstream, delete both the `.patch` and its
-  `.guard` file so the tag disappears from future builds.
+  `.guard` file so the tag disappears from future builds. Update the
+  `Patch set` table in `README.md` in the same change whenever a patch is
+  added, removed, or re-purposed.
 - The Release tag is `ubuntu-<source-version>` plus the same patch tags
   (`ubuntu-7.0.0-29.29-vmstat`), so a same-source patch-variant is a distinct
   Release and the immutable-asset guard never blocks it. `release-manifest.py`

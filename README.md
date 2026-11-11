@@ -88,6 +88,26 @@ automatically. The application icon is a recolored rendering of the CC0-1.0 AMP
 icon from `gilbarbara/logos`. CC0 does not grant trademark rights; this project
 is not affiliated with or endorsed by the AMP project.
 
+## Patch set
+
+Every `patches/NNNN-<tag>-*.patch` file applies to the Ubuntu source tree
+before the build. The `<tag>` segment becomes part of the kernel release name
+(`<upstream>-<abi>-<tags>-hibernate`), so `uname -r` reports the applied
+patch set. A companion `.guard` file names a source path and marker text;
+when the marker is already present upstream the build logs
+`Skipping <patch>: <path> already contains <pattern>` and omits the patch.
+Delete both the `.patch` and its `.guard` once Ubuntu ships the change.
+
+| Patch | Tag | Purpose |
+|---|---|---|
+| `0001-hibernate-allow-lockdown-opt-in.patch` | — (flavor `hibernate`) | Adds the default-off `HIBERNATION_ALLOW_LOCKDOWN` Kconfig switch permitting hibernation under integrity lockdown. The project's core patch; always applied. |
+| `0002-vmstat-fix-vmstat-shepherd-double-scheduling.patch` | `vmstat` | Checks `work_busy()` instead of `delayed_work_pending()` in `vmstat_shepherd` so a running `vmstat_update` is not queued a second time, which previously stalled per-CPU vmstat updates and could hang the system. Guarded on `!work_busy(&dw->work)` in `mm/vmstat.c`. |
+| `0003-elan100k-force-dell0a86-i2c-100khz.patch` | `elan100k` | Adds `DELL0A86` to the ACPI I2C 100 kHz quirk table, working around intermittent touchpad sluggishness on buses the firmware configures at 400 kHz. Guarded on `{ "DELL0A86", 0 },` in `drivers/i2c/i2c-core-acpi.c`. |
+
+Keep this table in sync with `patches/` when adding or removing a patch. File
+names, tag derivation, and guard semantics are enforced by
+`scripts/patch-tags.sh` and `scripts/build-kernel.sh`.
+
 ## Release chain
 
 Run the `Build Ubuntu hibernation kernel` workflow with `auto`, or supply an
