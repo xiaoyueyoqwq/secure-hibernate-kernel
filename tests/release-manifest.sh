@@ -82,6 +82,22 @@ manifest_tool="$mock_repo/scripts/release-manifest.py"
 	--expected-git-commit "$git_commit" \
 	--minimum-source-version "$source_version" >/dev/null
 
+variant_tag=${release_tag}-vmstat-elan100k-smu
+cp -a "$release_dir" "$temp_dir/variant-release"
+rm "$temp_dir/variant-release/release-manifest.json" \
+	"$temp_dir/variant-release/release-manifest.p7s" \
+	"$temp_dir/variant-release/SHA256SUMS"
+"$manifest_tool" create "$temp_dir/variant-release" \
+	--source-version "$source_version" \
+	--kernel-release "$kernel_release" \
+	--release-tag "$variant_tag" \
+	--git-commit "$git_commit" \
+	--private-key "$temp_dir/test.priv" >/dev/null
+"$manifest_tool" verify "$temp_dir/variant-release" \
+	--expected-release-tag "$variant_tag" \
+	--expected-git-commit "$git_commit" \
+	--minimum-source-version "$source_version" >/dev/null
+
 assert_rejected() {
 	local label=$1
 	shift
@@ -145,6 +161,31 @@ assert_rejected 'a downgraded Ubuntu source version' \
 assert_rejected 'an unexpected Release tag' \
 	"$manifest_tool" verify "$release_dir" \
 	--expected-release-tag ubuntu-7.0.0-30.30
+cp -a "$release_dir" "$temp_dir/other-source-tag"
+rm "$temp_dir/other-source-tag/release-manifest.json" \
+	"$temp_dir/other-source-tag/release-manifest.p7s" \
+	"$temp_dir/other-source-tag/SHA256SUMS"
+assert_rejected 'a Release tag from another source version' \
+	"$manifest_tool" create "$temp_dir/other-source-tag" \
+	--source-version "$source_version" \
+	--kernel-release "$kernel_release" \
+	--release-tag ubuntu-7.0.0-30.30-vmstat \
+	--git-commit "$git_commit" \
+	--private-key "$temp_dir/test.priv"
+assert_rejected 'a Release tag with a malformed patch suffix' \
+	"$manifest_tool" create "$temp_dir/other-source-tag" \
+	--source-version "$source_version" \
+	--kernel-release "$kernel_release" \
+	--release-tag "${release_tag}-Vmstat" \
+	--git-commit "$git_commit" \
+	--private-key "$temp_dir/test.priv"
+assert_rejected 'a Release tag glued to the source version' \
+	"$manifest_tool" create "$temp_dir/other-source-tag" \
+	--source-version "$source_version" \
+	--kernel-release "$kernel_release" \
+	--release-tag "${release_tag}1" \
+	--git-commit "$git_commit" \
+	--private-key "$temp_dir/test.priv"
 assert_rejected 'an unexpected Git commit' \
 	"$manifest_tool" verify "$release_dir" \
 	--expected-git-commit fedcba9876543210fedcba9876543210fedcba98

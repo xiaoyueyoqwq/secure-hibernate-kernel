@@ -29,6 +29,7 @@ SOURCE_VERSION = re.compile(
     r"(?:[.+~][0-9A-Za-z.+~-]+)?$"
 )
 KERNEL_RELEASE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]*-hibernate$")
+PATCH_TAG_SUFFIXES = re.compile(r"(?:-[a-z0-9]+)*")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 TOP_LEVEL_KEYS = {
@@ -112,27 +113,17 @@ def expected_tag(source_version: str) -> str:
     return f"ubuntu-{source_version.replace('~', '_')}"
 
 
-def acceptable_tags(source_version: str) -> tuple[str, ...]:
-    """Accepted Release tags for a source version: the base tag plus one
-    per declared patch tag (e.g. ubuntu-7.0.0-29.29 and
-    ubuntu-7.0.0-29.29-vmstat), matching the resolver's marker_tag."""
+def release_tag_matches_source(release_tag: str, source_version: str) -> bool:
+    """The Release tag must be the base tag plus optional patch-tag suffixes
+    (e.g. ubuntu-7.0.0-29.29 and ubuntu-7.0.0-29.29-vmstat), matching the
+    resolver's PROJECT_RELEASE_TAG grammar in update-local.py. The patch set
+    evolves independently of installed controllers, so the verifier accepts
+    any well-formed suffix; --expected-release-tag still pins verification to
+    the resolver's selected tag."""
     base = expected_tag(source_version)
-    suffixes = ("",)
-    script = Path(__file__).resolve().parent / "patch-tags.sh"
-    if not script.is_file():
-        return (base,)
-    result = subprocess.run(
-        [str(script)],
-        capture_output=True,
-        text=True,
-        env=os.environ,
-    )
-    if result.returncode != 0:
-        fail(f"Could not resolve patch tags for Release tag validation: {result.stderr.strip()}")
-    tags = result.stdout.strip()
-    if tags:
-        suffixes += (tags,)
-    return tuple(base + suffix for suffix in suffixes)
+    if not release_tag.startswith(base):
+        return False
+    return PATCH_TAG_SUFFIXES.fullmatch(release_tag[len(base):]) is not None
 
 
 def validate_metadata_values(
@@ -142,7 +133,7 @@ def validate_metadata_values(
         fail(f"Unsupported Ubuntu source package version: {source_version}")
     if not KERNEL_RELEASE.fullmatch(kernel_release):
         fail(f"Unsupported kernel release: {kernel_release}")
-    if release_tag not in acceptable_tags(source_version):
+    if not release_tag_matches_source(release_tag, source_version):
         fail(f"Release tag does not match the source version: {release_tag}")
     if not COMMIT.fullmatch(git_commit):
         fail("Git commit must be a lowercase 40-character SHA-1 object ID")

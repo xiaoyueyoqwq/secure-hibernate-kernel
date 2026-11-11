@@ -105,7 +105,11 @@
 - The Release tag is `ubuntu-<source-version>` plus the same patch tags
   (`ubuntu-7.0.0-29.29-vmstat`), so a same-source patch-variant is a distinct
   Release and the immutable-asset guard never blocks it. `release-manifest.py`
-  accepts exactly the base and patch-derived tags, nothing else. A published
+  validates the tag grammar only (`ubuntu-<source-version>` plus optional
+  `-[a-z0-9]+` suffixes, matching the resolver's `PROJECT_RELEASE_TAG`); the
+  installed patch set must not gate verification, or a new patch tag would
+  break already installed controllers. The exact tag binding remains the
+  `--expected-release-tag` match against the resolver's selection. A published
   base tag must never be re-published with different assets; create the variant
   tag instead.
 - Automatic first installation from `ubuntu-7.0.0-28.28` must remain limited to
