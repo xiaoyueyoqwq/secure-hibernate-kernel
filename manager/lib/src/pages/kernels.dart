@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app_state.dart';
-import '../theme.dart';
 import '../widgets/core.dart';
 
 class KernelsPage extends StatefulWidget {
@@ -339,57 +338,20 @@ class KernelReleaseDownloadRow extends StatelessWidget {
           ? null
           : t.text('kernels.releaseDownloadingAsset', {'asset': asset}),
     ].whereType<String>().join(' · ');
-    return AppCard(
+    return StatusRow(
       key: const ValueKey('kernel-release-download'),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: StatusGlyph(StatusKind.loading),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      '${t.text('kernels.releaseStatus')}:',
-                      style: TextStyle(
-                        color: context.palette.textStrong,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      t.text('kernels.releaseDownloading'),
-                      style: TextStyle(
-                        color: context.palette.textMedium,
-                        fontFamily: 'Ubuntu',
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(value: progress),
-                if (details.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    details,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+      label: t.text('kernels.releaseStatus'),
+      value: Text(t.text('kernels.releaseDownloading')),
+      status: StatusKind.loading,
+      description: details.isEmpty ? null : details,
+      action: AppProgressButton(
+        label: percent == null
+            ? t.text('kernels.releaseDownloading')
+            : '$percent%',
+        busy: false,
+        transfer: true,
+        progress: progress == null ? 0 : (progress * 100).round(),
+        danger: false,
       ),
     );
   }

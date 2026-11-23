@@ -1131,6 +1131,133 @@ class _AppButtonState extends State<AppButton> {
   }
 }
 
+/// Action button that can render a live transfer or install progress as a
+/// background fill. When [onPressed] is null the button is display-only.
+class AppProgressButton extends StatelessWidget {
+  const AppProgressButton({
+    required this.label,
+    required this.busy,
+    required this.transfer,
+    required this.progress,
+    required this.danger,
+    this.onPressed,
+    this.tooltip,
+    this.width = 144,
+    super.key,
+  });
+
+  final String label;
+  final bool busy;
+  final bool transfer;
+  final int progress;
+  final bool danger;
+  final VoidCallback? onPressed;
+  final String? tooltip;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    Widget content(Color color) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (busy && !transfer) ...[
+                SizedBox.square(
+                  dimension: 15,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+    final button = GestureDetector(
+      onTap: busy ? null : onPressed,
+      child: Opacity(
+        opacity: busy && !transfer ? 0.65 : 1,
+        child: Container(
+          width: width,
+          height: 36,
+          decoration: BoxDecoration(
+            color: danger
+                ? const Color(0xffb91c1c)
+                : transfer
+                    ? palette.card
+                    : palette.activeFill,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: danger
+                  ? const Color(0xffb91c1c)
+                  : transfer
+                      ? palette.activeFill
+                      : Colors.transparent,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              if (transfer)
+                AnimatedFractionallySizedBox(
+                  key: const ValueKey('app-progress-button-fill'),
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.centerLeft,
+                  widthFactor: progress / 100,
+                  heightFactor: 1,
+                  child: ColoredBox(color: palette.activeFill),
+                ),
+              if (transfer) ...[
+                Positioned.fill(child: content(palette.text)),
+                Positioned.fill(
+                  child: AnimatedFractionallySizedBox(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress / 100,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        minWidth: width - 2,
+                        maxWidth: width - 2,
+                        child: SizedBox(
+                          width: width - 2,
+                          height: 34,
+                          child: content(palette.activeText),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ] else
+                Positioned.fill(
+                  child: content(danger ? Colors.white : palette.activeText),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
+  }
+}
+
 class AppSwitch extends StatelessWidget {
   const AppSwitch({required this.value, this.onChanged, super.key});
 

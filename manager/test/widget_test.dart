@@ -1165,7 +1165,14 @@ void main() {
     expect(
       find.descendant(
         of: downloadRow,
-        matching: find.byType(LinearProgressIndicator),
+        matching: find.byType(AppProgressButton),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: downloadRow,
+        matching: find.byKey(const ValueKey('app-progress-button-fill')),
       ),
       findsOneWidget,
     );
@@ -1175,6 +1182,13 @@ void main() {
         matching: find.text('128.0 / 256.0 MB (50%)'),
       ),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: downloadRow,
+        matching: find.text('50%'),
+      ),
+      findsWidgets,
     );
     expect(
       find.byKey(const ValueKey('kernel-release-status')),
@@ -1370,7 +1384,7 @@ void main() {
     expect(find.text('Prepare Enrollment'), findsOneWidget);
     expect(find.text('14%'), findsNothing);
     expect(
-      find.byKey(const ValueKey('wizard-action-transfer-fill')),
+      find.byKey(const ValueKey('app-progress-button-fill')),
       findsNothing,
     );
     expect(backend.snapshotReads, 1);
