@@ -18,20 +18,22 @@ diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
 index 5cc79d1..bb4f66c 100644
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
-@@ -660,4 +660,5 @@ source "drivers/misc/mchp_pci1xxxx/Kconfig"
+@@ -585,5 +585,6 @@ source "drivers/misc/mchp_pci1xxxx/Kconfig"
  source "drivers/misc/keba/Kconfig"
  source "drivers/misc/amd-sbi/Kconfig"
  source "drivers/misc/rp1/Kconfig"
+ source "drivers/misc/issei/Kconfig"
 +source "drivers/misc/ryzen_smu/Kconfig"
  endmenu
 diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
 index b32a259..1370496 100644
 --- a/drivers/misc/Makefile
 +++ b/drivers/misc/Makefile
-@@ -75,3 +75,4 @@ obj-$(CONFIG_MCHP_LAN966X_PCI)	+= lan966x-pci.o
+@@ -70,4 +70,5 @@ obj-$(CONFIG_MCHP_LAN966X_PCI)	+= lan966x-pci.o
  obj-y				+= keba/
  obj-y				+= amd-sbi/
  obj-$(CONFIG_MISC_RP1)		+= rp1/
+ obj-$(CONFIG_INTEL_SSEI)	+= issei/
 +obj-$(CONFIG_RYZEN_SMU)		+= ryzen_smu/
 diff --git a/drivers/misc/ryzen_smu/Kconfig b/drivers/misc/ryzen_smu/Kconfig
 new file mode 100644

@@ -13,10 +13,12 @@ the problem during extended heavy use and an S4 hibernate/resume cycle.
 diff --git a/drivers/i2c/i2c-core-acpi.c b/drivers/i2c/i2c-core-acpi.c
 --- a/drivers/i2c/i2c-core-acpi.c
 +++ b/drivers/i2c/i2c-core-acpi.c
-@@ -372,5 +372,6 @@ static const struct acpi_device_id i2c_acpi_force_100khz_device_ids[] = {
+@@ -373,7 +373,8 @@ static const struct acpi_device_id i2c_acpi_force_100khz_device_ids[] = {
 	 */
 +	{ "DELL0A86", 0 },
 	{ "DLL0945", 0 },
+	{ "ELAN0678", 0 },
 	{ "ELAN06FA", 0 },
+	{ "ELAN1300", 0 },
 	{}
  };
